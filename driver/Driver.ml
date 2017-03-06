@@ -460,6 +460,8 @@ let _ =
                        if Configuration.abi = "macosx"
                        then Machine.x86_32_macosx
                        else Machine.x86_32
+      | "mppa"    -> assert (Configuration.model = "k1b");
+                     Machine.mppa_k1b
       | _         -> assert false
       end;
     Builtins.set C2C.builtins;
