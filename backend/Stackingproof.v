@@ -1921,9 +1921,9 @@ Proof.
   exact symbols_preserved. eauto.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
-  rewrite transl_destroyed_by_op.  apply agree_regs_undef_regs; auto.
-  apply agree_locs_set_reg; auto. apply agree_locs_undef_locs. auto. apply destroyed_by_op_caller_save.
-  apply frame_set_reg. apply frame_undef_regs. exact SEP. 
+  (*rewrite transl_destroyed_by_op.  apply agree_regs_undef_regs; auto.*)
+  apply agree_locs_set_reg; auto. (*apply agree_locs_undef_locs. auto. apply destroyed_by_op_caller_save.
+  apply frame_set_reg. apply frame_undef_regs. exact SEP. *)
 
 - (* Lload *)
   assert (exists a',
