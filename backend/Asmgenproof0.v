@@ -36,13 +36,17 @@ Hint Extern 2 (_ <> _) => congruence: asmgen.
 Lemma ireg_of_eq:
   forall r r', ireg_of r = OK r' -> preg_of r = IR r'.
 Proof.
-  unfold ireg_of; intros. destruct (preg_of r); inv H; auto.
+  unfold ireg_of; intros.
+  try unfold gpreg_of in H.
+  destruct (preg_of r); inv H; auto.
 Qed.
 
 Lemma freg_of_eq:
   forall r r', freg_of r = OK r' -> preg_of r = FR r'.
 Proof.
-  unfold freg_of; intros. destruct (preg_of r); inv H; auto.
+  unfold freg_of; intros.
+  try unfold pgpreg_of in H.
+  destruct (preg_of r); inv H; auto.
 Qed.
 
 Lemma preg_of_injective:
@@ -178,7 +182,7 @@ Lemma ireg_val:
   ireg_of r = OK r' ->
   Val.lessdef (ms r) rs#r'.
 Proof.
-  intros. rewrite <- (ireg_of_eq _ _ H0). eapply preg_val; eauto.
+  intros. try rewrite <- (ireg_of_eq _ _ H0). eapply preg_val; eauto.
 Qed.
 
 Lemma freg_val:
@@ -618,9 +622,13 @@ Opaque transl_instr.
     eapply transl_instr_tail; eauto. }
   exploit is_tail_code_tail. eexact TL3. intros [ofs CT].
   exists (Ptrofs.repr ofs). red; intros.
+  (* FIXME: dirty hack as long as we don't generate code for [Mcall] *)
+  inversion EQ0.
+  (*
   rewrite Ptrofs.unsigned_repr. congruence.
   exploit code_tail_bounds_1; eauto.
   apply transf_function_len in TF. omega.
+*)
 + exists Ptrofs.zero; red; intros. congruence.
 Qed.
 
