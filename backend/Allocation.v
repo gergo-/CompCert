@@ -68,10 +68,24 @@ Inductive block_shape: Type :=
   | BSload2_2 (addr addr': addressing) (args: list reg) (dst: reg)
          (mv1: moves) (args': list mreg) (dst': mreg)
          (mv2: moves) (s: node)
+  | BSload2f (addr1 addr2: addressing) (args: list reg) (dst: reg)
+         (mv1: moves) (args1': list mreg) (dst1': mreg)
+         (mv2: moves) (args2': list mreg) (dst2': mreg)
+         (mv3: moves) (s: node)
+  | BSload2f_1 (addr: addressing) (args: list reg) (dst: reg)
+         (mv1: moves) (args': list mreg) (dst': mreg)
+         (mv2: moves) (s: node)
+  | BSload2f_2 (addr addr': addressing) (args: list reg) (dst: reg)
+         (mv1: moves) (args': list mreg) (dst': mreg)
+         (mv2: moves) (s: node)
   | BSstore (chunk: memory_chunk) (addr: addressing) (args: list reg) (src: reg)
          (mv1: moves) (args': list mreg) (src': mreg)
          (s: node)
   | BSstore2 (addr1 addr2: addressing) (args: list reg) (src: reg)
+         (mv1: moves) (args1': list mreg) (src1': mreg)
+         (mv2: moves) (args2': list mreg) (src2': mreg)
+         (s: node)
+  | BSstore2f (addr1 addr2: addressing) (args: list reg) (src: reg)
          (mv1: moves) (args1': list mreg) (src1': mreg)
          (mv2: moves) (args2': list mreg) (src2': mreg)
          (s: node)
@@ -90,8 +104,8 @@ Inductive block_shape: Type :=
   | BSreturn (arg: option reg)
          (mv: moves).
 
-(** Classify operations into moves, 64-bit split integer operations, and other
-  arithmetic/logical operations. *)
+(** Classify operations into moves, 64-bit split integer or floating-point
+  operations, and other arithmetic/logical operations. *)
 
 Inductive operation_kind {A: Type}: operation -> list A -> Type :=
   | operation_Omove: forall arg, operation_kind Omove (arg :: nil)
@@ -217,6 +231,25 @@ Definition pair_instr_block
                  (assertion (option_eq eq_addressing (offset_addressing addr 4) (Some addr'));
                   Some(BSload2_2 addr addr' args dst mv1 args' dst' mv2 s))
             end
+          else if chunk_eq chunk Mfloat64 && Archi.splitfloat then
+            assertion (chunk_eq chunk' Mfloat32);
+            let (mv2, b3) := extract_moves nil b2 in
+            match b3 with
+            | Lload chunk'' addr'' args'' dst'' :: b4 =>
+                let (mv3, b5) := extract_moves nil b4 in
+                assertion (chunk_eq chunk'' Mfloat32);
+                assertion (eq_addressing addr addr');
+                assertion (option_eq eq_addressing (offset_addressing addr 4) (Some addr''));
+                assertion (check_succ s b5);
+                Some(BSload2f addr addr'' args dst mv1 args' dst' mv2 args'' dst'' mv3 s)
+            | _ =>
+                assertion (check_succ s b3);
+                if (eq_addressing addr addr') then
+                  Some(BSload2f_1 addr args dst mv1 args' dst' mv2 s)
+                else
+                 (assertion (option_eq eq_addressing (offset_addressing addr 4) (Some addr'));
+                  Some(BSload2f_2 addr addr' args dst mv1 args' dst' mv2 s))
+            end
           else (
             let (mv2, b3) := extract_moves nil b2 in
             assertion (chunk_eq chunk chunk');
@@ -241,6 +274,18 @@ Definition pair_instr_block
                 assertion (option_eq eq_addressing (offset_addressing addr 4) (Some addr''));
                 assertion (check_succ s b4);
                 Some(BSstore2 addr addr'' args src mv1 args' src' mv2 args'' src'' s)
+            | _ => None
+            end
+          else if chunk_eq chunk Mfloat64 && Archi.splitfloat then
+            let (mv2, b3) := extract_moves nil b2 in
+            match b3 with
+            | Lstore chunk'' addr'' args'' src'' :: b4 =>
+                assertion (chunk_eq chunk' Mfloat32);
+                assertion (chunk_eq chunk'' Mfloat32);
+                assertion (eq_addressing addr addr');
+                assertion (option_eq eq_addressing (offset_addressing addr 4) (Some addr''));
+                assertion (check_succ s b4);
+                Some(BSstore2f addr addr'' args src mv1 args' src' mv2 args'' src'' s)
             | _ => None
             end
           else (
@@ -338,7 +383,7 @@ Definition pair_entrypoints (f1: RTL.function) (f2: LTL.function) : option moves
   integer value of [pseudoreg] in the original RTL code.
 *)
 
-Inductive equation_kind : Type := Full | Low | High.
+Inductive equation_kind : Type := Full | Low | High | LowF | HighF.
 
 Record equation := Eq {
   ekind: equation_kind;
@@ -352,7 +397,7 @@ Record equation := Eq {
 Module IndexedEqKind <: INDEXED_TYPE.
   Definition t := equation_kind.
   Definition index (x: t) :=
-    match x with Full => 1%positive | Low => 2%positive | High => 3%positive end.
+    (match x with Full => 1 | Low => 2 | High => 3 | LowF => 4 | HighF => 5 end)%positive.
   Lemma index_inj: forall x y, index x = index y -> x = y.
   Proof. destruct x; destruct y; simpl; congruence. Qed.
   Definition eq (x y: t) : {x=y} + {x<>y}.
@@ -609,6 +654,7 @@ Definition sel_type (k: equation_kind) (ty: typ) : typ :=
   match k with
   | Full => ty
   | Low | High => Tint
+  | LowF | HighF => Tsingle
   end.
 
 Definition loc_type_compat (env: regenv) (l: loc) (e: eqs) : bool :=
@@ -628,8 +674,8 @@ Fixpoint add_equations (rl: list reg) (ml: list mreg) (e: eqs) : option eqs :=
   end.
 
 (** [add_equations_args] is similar but additionally handles the splitting
-  of pseudoregisters of type [Tlong] in two locations containing the
-  two 32-bit halves of the 64-bit integer. *)
+  of pseudoregisters of type [Tlong] or [Tfloat] in two locations containing
+  the two 32-bit halves of the 64-bit value. *)
 
 Function add_equations_args (rl: list reg) (tyl: list typ) (ll: list (rpair loc)) (e: eqs) : option eqs :=
   match rl, tyl, ll with
@@ -639,6 +685,10 @@ Function add_equations_args (rl: list reg) (tyl: list typ) (ll: list (rpair loc)
   | r1 :: rl, Tlong :: tyl, Twolong l1 l2 :: ll =>
       if Archi.splitlong then
         add_equations_args rl tyl ll (add_equation (Eq Low r1 l2) (add_equation (Eq High r1 l1) e))
+      else None
+  | r1 :: rl, Tfloat :: tyl, Twofloat l1 l2 :: ll =>
+      if Archi.splitfloat then
+        add_equations_args rl tyl ll (add_equation (Eq LowF r1 l2) (add_equation (Eq HighF r1 l1) e))
       else None
   | _, _, _ => None
   end.
@@ -653,6 +703,10 @@ Function add_equations_res (r: reg) (oty: option typ) (p: rpair mreg) (e: eqs) :
   | Twolong mr1 mr2, Some Tlong =>
       if Archi.splitlong then
         Some (add_equation (Eq Low r (R mr2)) (add_equation (Eq High r (R mr1)) e))
+      else None
+  | Twofloat mr1 mr2, Some Tfloat =>
+      if Archi.splitfloat then
+        Some (add_equation (Eq LowF r (R mr2)) (add_equation (Eq HighF r (R mr1)) e))
       else None
   | _, _ =>
       None
@@ -669,6 +723,10 @@ Function remove_equations_res (r: reg) (p: rpair mreg) (e: eqs) : option eqs :=
       if mreg_eq mr2 mr1
       then None
       else Some (remove_equation (Eq Low r (R mr2)) (remove_equation (Eq High r (R mr1)) e))
+  | Twofloat mr1 mr2 =>
+      if mreg_eq mr2 mr1
+      then None
+      else Some (remove_equation (Eq LowF r (R mr2)) (remove_equation (Eq HighF r (R mr1)) e))
   end.
 
 (** [add_equations_ros] adds an equation, if needed, between an optional
@@ -694,6 +752,10 @@ Fixpoint add_equations_builtin_arg
       assertion (typ_eq (env r) Tlong);
       assertion (Archi.splitlong);
       Some (add_equation (Eq Low r llo) (add_equation (Eq High r lhi) e))
+  | BA r, BA_splitfloat (BA lhi) (BA llo) =>
+      assertion (typ_eq (env r) Tfloat);
+      assertion (Archi.splitfloat);
+      Some (add_equation (Eq LowF r llo) (add_equation (Eq HighF r lhi) e))
   | BA_int n, BA_int n' =>
       assertion (Int.eq_dec n n'); Some e
   | BA_long n, BA_long n' =>
@@ -719,6 +781,9 @@ Fixpoint add_equations_builtin_arg
       assertion (Ptrofs.eq_dec ofs ofs');
       Some e
   | BA_splitlong hi lo, BA_splitlong hi' lo' =>
+      do e1 <- add_equations_builtin_arg env hi hi' e;
+      add_equations_builtin_arg env lo lo' e1
+  | BA_splitfloat hi lo, BA_splitfloat hi' lo' =>
       do e1 <- add_equations_builtin_arg env hi hi' e;
       add_equations_builtin_arg env lo lo' e1
   | _, _ =>
@@ -762,6 +827,11 @@ Definition remove_equations_builtin_res
       if mreg_eq rhi rlo then None else
         Some (remove_equation (Eq Low r (R rlo))
                 (remove_equation (Eq High r (R rhi)) e))
+  | BR r, BR_splitfloat (BR rhi) (BR rlo) =>
+      assertion (typ_eq (env r) Tfloat);
+      if mreg_eq rhi rlo then None else
+        Some (remove_equation (Eq LowF r (R rlo))
+                (remove_equation (Eq HighF r (R rhi)) e))
   | BR_none, BR_none => Some e
   | _, _ => None
   end.
@@ -818,6 +888,20 @@ Definition compat_left2 (r: reg) (l1 l2: loc) (e: eqs) : bool :=
         match ekind q with
         | High => Loc.eq l1 (eloc q)
         | Low => Loc.eq l2 (eloc q)
+        | _ => false
+        end)
+    (select_reg_l r) (select_reg_h r)
+    (eqs1 e).
+
+(** [compat_left2_f r l1 l2 e] returns true if all equations in [e] that involve
+    [r] are of the form [r = l1 [HighF]] or [r = l2 [LowF]]. *)
+
+Definition compat_left2_f (r: reg) (l1 l2: loc) (e: eqs) : bool :=
+  EqSet.for_all_between
+    (fun q =>
+        match ekind q with
+        | HighF => Loc.eq l1 (eloc q)
+        | LowF => Loc.eq l2 (eloc q)
         | _ => false
         end)
     (select_reg_l r) (select_reg_h r)
@@ -887,6 +971,9 @@ Definition transfer_use_def (args: list reg) (res: reg) (args': list mreg) (res'
 Definition kind_first_word := if Archi.big_endian then High else Low.
 Definition kind_second_word := if Archi.big_endian then Low else High.
 
+Definition kind_first_word_f := if Archi.big_endian then HighF else LowF.
+Definition kind_second_word_f := if Archi.big_endian then LowF else HighF.
+
 (** The core transfer function.  It takes a set [e] of equations that must
   hold "after" and a block shape [shape] representing a matching pair
   of an RTL instruction and an LTL basic block.  It returns the set of
@@ -951,6 +1038,33 @@ Definition transfer_aux (f: RTL.function) (env: regenv)
       assertion (can_undef (destroyed_by_load Mint32 addr') e2);
       do e3 <- add_equations args args' e2;
       track_moves env mv1 e3
+  | BSload2f addr addr' args dst mv1 args1' dst1' mv2 args2' dst2' mv3 s =>
+      do e1 <- track_moves env mv3 e;
+      let e2 := remove_equation (Eq kind_second_word_f dst (R dst2')) e1 in
+      assertion (loc_unconstrained (R dst2') e2);
+      assertion (can_undef (destroyed_by_load Mfloat32 addr') e2);
+      do e3 <- add_equations args args2' e2;
+      do e4 <- track_moves env mv2 e3;
+      let e5 := remove_equation (Eq kind_first_word_f dst (R dst1')) e4 in
+      assertion (loc_unconstrained (R dst1') e5);
+      assertion (can_undef (destroyed_by_load Mfloat32 addr) e5);
+      assertion (reg_unconstrained dst e5);
+      do e6 <- add_equations args args1' e5;
+      track_moves env mv1 e6
+  | BSload2f_1 addr args dst mv1 args' dst' mv2 s =>
+      do e1 <- track_moves env mv2 e;
+      let e2 := remove_equation (Eq kind_first_word_f dst (R dst')) e1 in
+      assertion (reg_loc_unconstrained dst (R dst') e2);
+      assertion (can_undef (destroyed_by_load Mfloat32 addr) e2);
+      do e3 <- add_equations args args' e2;
+      track_moves env mv1 e3
+  | BSload2f_2 addr addr' args dst mv1 args' dst' mv2 s =>
+      do e1 <- track_moves env mv2 e;
+      let e2 := remove_equation (Eq kind_second_word_f dst (R dst')) e1 in
+      assertion (reg_loc_unconstrained dst (R dst') e2);
+      assertion (can_undef (destroyed_by_load Mfloat32 addr') e2);
+      do e3 <- add_equations args args' e2;
+      track_moves env mv1 e3
   | BSloaddead chunk addr args dst mv s =>
       assertion (reg_unconstrained dst e);
       track_moves env mv e
@@ -966,6 +1080,15 @@ Definition transfer_aux (f: RTL.function) (env: regenv)
       assertion (can_undef (destroyed_by_store Mint32 addr) e2);
       do e3 <- add_equations args args1'
                   (add_equation (Eq kind_first_word src (R src1')) e2);
+      track_moves env mv1 e3
+  | BSstore2f addr addr' args src mv1 args1' src1' mv2 args2' src2' s =>
+      assertion (can_undef (destroyed_by_store Mfloat32 addr') e);
+      do e1 <- add_equations args args2'
+                  (add_equation (Eq kind_second_word_f src (R src2')) e);
+      do e2 <- track_moves env mv2 e1;
+      assertion (can_undef (destroyed_by_store Mfloat32 addr) e2);
+      do e3 <- add_equations args args1'
+                  (add_equation (Eq kind_first_word_f src (R src1')) e2);
       track_moves env mv1 e3
   | BScall sg ros args res mv1 ros' mv2 s =>
       let args' := loc_arguments sg in
@@ -1164,9 +1287,13 @@ Definition successors_block_shape (bsh: block_shape) : list node :=
   | BSload2 addr addr' args dst mv1 args1' dst1' mv2 args2' dst2' mv3 s => s :: nil
   | BSload2_1 addr args dst mv1 args' dst' mv2 s => s :: nil
   | BSload2_2 addr addr' args dst mv1 args' dst' mv2 s => s :: nil
+  | BSload2f addr addr' args dst mv1 args1' dst1' mv2 args2' dst2' mv3 s => s :: nil
+  | BSload2f_1 addr args dst mv1 args' dst' mv2 s => s :: nil
+  | BSload2f_2 addr addr' args dst mv1 args' dst' mv2 s => s :: nil
   | BSloaddead chunk addr args dst mv s => s :: nil
   | BSstore chunk addr args src mv1 args' src' s => s :: nil
   | BSstore2 addr addr' args src mv1 args1' src1' mv2 args2' src2' s => s :: nil
+  | BSstore2f addr addr' args src mv1 args1' src1' mv2 args2' src2' s => s :: nil
   | BScall sg ros args res mv1 ros' mv2 s => s :: nil
   | BStailcall sg ros args mv1 ros' => nil
   | BSbuiltin ef args res mv1 args' res' mv2 s => s :: nil
@@ -1183,9 +1310,9 @@ Definition analyze (f: RTL.function) (env: regenv) (bsh: PTree.t block_shape) :=
 (** Checking equations at function entry point.  The RTL function receives
   its arguments in the list [rparams] of pseudoregisters.  The LTL function
   receives them in the list [lparams] of locations dictated by the
-  calling conventions, with arguments of type [Tlong] being split in
-  two 32-bit halves.  We check that the equations [e] that must hold
-  at the beginning of the functions are compatible with these calling
+  calling conventions, with arguments of type [Tlong] or [Tfloat] possibly
+  split in two 32-bit halves.  We check that the equations [e] that must
+  hold at the beginning of the functions are compatible with these calling
   conventions, in the sense that all equations involving a pseudoreg
   [r] from [rparams] is of the form [r = l [Full]] or [r = l [Low]]
   or [r = l [High]], where [l] is the corresponding element of [lparams].
@@ -1202,6 +1329,8 @@ Function compat_entry (rparams: list reg) (lparams: list (rpair loc)) (e: eqs)
       compat_left r1 l1 e && compat_entry rl ll e
   | r1 :: rl, Twolong l1 l2 :: ll =>
       compat_left2 r1 l1 l2 e && compat_entry rl ll e
+  | r1 :: rl, Twofloat l1 l2 :: ll =>
+      compat_left2_f r1 l1 l2 e && compat_entry rl ll e
   | _, _ => false
   end.
 

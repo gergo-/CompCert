@@ -60,6 +60,7 @@ Fixpoint wt_builtin_res (ty: typ) (res: builtin_res mreg) : bool :=
   | BR r => subtype ty (mreg_type r)
   | BR_none => true
   | BR_splitlong hi lo => wt_builtin_res Tint hi && wt_builtin_res Tint lo
+  | BR_splitfloat hi lo => wt_builtin_res Tsingle hi && wt_builtin_res Tsingle lo
   end.
 
 Definition wt_instr (i: instruction) : bool :=
@@ -168,6 +169,10 @@ Proof.
   apply wt_setreg. eapply Val.has_subtype; eauto. destruct v; exact I.
   apply wt_setreg. eapply Val.has_subtype; eauto. destruct v; exact I.
   auto.
+- intros (A & B & C & D & E) F.
+  apply wt_setreg. eapply Val.has_subtype; eauto. destruct v; exact I.
+  apply wt_setreg. eapply Val.has_subtype; eauto. destruct v; exact I.
+  auto.
 Qed.
 
 Lemma wt_setres:
@@ -180,6 +185,8 @@ Proof.
   induction res; simpl; intros.
 - apply wt_setreg; auto. eapply Val.has_subtype; eauto.
 - auto.
+- InvBooleans. eapply IHres2; eauto. destruct v; exact I.
+  eapply IHres1; eauto. destruct v; exact I.
 - InvBooleans. eapply IHres2; eauto. destruct v; exact I.
   eapply IHres1; eauto. destruct v; exact I.
 Qed.

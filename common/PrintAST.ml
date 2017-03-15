@@ -70,6 +70,9 @@ let rec print_builtin_arg px oc = function
   | BA_splitlong(hi, lo) ->
       fprintf oc "splitlong(%a, %a)"
                  (print_builtin_arg px) hi (print_builtin_arg px) lo
+  | BA_splitfloat(hi, lo) ->
+      fprintf oc "splitfloat(%a, %a)"
+                 (print_builtin_arg px) hi (print_builtin_arg px) lo
 
 let rec print_builtin_args px oc = function
   | [] -> ()
@@ -82,5 +85,8 @@ let rec print_builtin_res px oc = function
   | BR_none -> fprintf oc "_"
   | BR_splitlong(hi, lo) ->
       fprintf oc "splitlong(%a, %a)"
+                 (print_builtin_res px) hi (print_builtin_res px) lo
+  | BR_splitfloat(hi, lo) ->
+      fprintf oc "splitfloat(%a, %a)"
                  (print_builtin_res px) hi (print_builtin_res px) lo
 

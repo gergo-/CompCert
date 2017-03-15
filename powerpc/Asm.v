@@ -404,6 +404,7 @@ Definition set_pair (p: rpair preg) (v: val) (rs: regset) : regset :=
   match p with
   | One r => rs#r <- v
   | Twolong rhi rlo => rs#rhi <- (Val.hiword v) #rlo <- (Val.loword v)
+  | Twofloat rhi rlo => rs#rhi <- (Val.hiwordf v) #rlo <- (Val.lowordf v)
   end.
 
 (** Assigning the result of a builtin *)
@@ -413,6 +414,7 @@ Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
   | BR r => rs#r <- v
   | BR_none => rs
   | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
+  | BR_splitfloat hi lo => set_res lo (Val.lowordf v) (set_res hi (Val.hiwordf v) rs)
   end.
 
 Section RELSEM.
@@ -989,7 +991,11 @@ Inductive extcall_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
   | extcall_arg_twolong: forall hi lo vhi vlo,
       extcall_arg rs m hi vhi ->
       extcall_arg rs m lo vlo ->
-      extcall_arg_pair rs m (Twolong hi lo) (Val.longofwords vhi vlo).
+      extcall_arg_pair rs m (Twolong hi lo) (Val.longofwords vhi vlo)
+  | extcall_arg_twofloat: forall hi lo vhi vlo,
+      extcall_arg rs m hi vhi ->
+      extcall_arg rs m lo vlo ->
+      extcall_arg_pair rs m (Twofloat hi lo) (Val.floatofsingles vhi vlo).
 
 Definition extcall_arguments
     (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
@@ -1069,6 +1075,7 @@ Proof.
              extcall_arg_pair rs m p v1 -> extcall_arg_pair rs m p v2 -> v1 = v2).
   { intros. inv H; inv H0. 
     eapply A; eauto.
+    f_equal; eapply A; eauto.
     f_equal; eapply A; eauto. }
   assert (C: forall ll vl1, list_forall2 (extcall_arg_pair rs m) ll vl1 ->
              forall vl2, list_forall2 (extcall_arg_pair rs m) ll vl2 -> vl1 = vl2).

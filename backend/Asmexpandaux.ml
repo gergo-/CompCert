@@ -89,6 +89,12 @@ let translate_annot sp preg_to_dwarf annot =
           match (aux hi,aux lo) with
           | Some (_,hi) ,Some (_,lo) -> Some (sp,BA_splitlong (hi,lo))
           | _,_ -> None
+        end
+    | BA_splitfloat (hi,lo) ->
+        begin
+          match (aux hi,aux lo) with
+          | Some (_,hi) ,Some (_,lo) -> Some (sp,BA_splitfloat (hi,lo))
+          | _,_ -> None
         end in
   (match annot with
   | [] -> None

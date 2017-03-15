@@ -156,6 +156,8 @@ let rec convert_builtin_arg tyenv = function
       let ty = tyenv r in
       if Archi.splitlong && ty = Tlong
       then BA_splitlong(BA(V(r, Tint)), BA(V(twin_reg r, Tint)))
+      else if Archi.splitfloat && ty = Tfloat
+      then BA_splitfloat(BA(V(r, Tsingle)), BA(V(twin_reg r, Tsingle)))
       else BA(V(r, ty))
   | BA_int n -> BA_int n
   | BA_long n -> BA_long n
@@ -167,15 +169,19 @@ let rec convert_builtin_arg tyenv = function
   | BA_addrglobal(id, ofs) -> BA_addrglobal(id, ofs)
   | BA_splitlong(hi, lo) ->
       BA_splitlong(convert_builtin_arg tyenv hi, convert_builtin_arg tyenv lo)
+  | BA_splitfloat(hi, lo) ->
+      BA_splitfloat(convert_builtin_arg tyenv hi, convert_builtin_arg tyenv lo)
 
 let convert_builtin_res tyenv = function
   | BR r ->
       let ty = tyenv r in
       if Archi.splitlong && ty = Tlong
       then BR_splitlong(BR(V(r, Tint)), BR(V(twin_reg r, Tint)))
+      else if Archi.splitfloat && ty = Tfloat
+      then BR_splitfloat(BR(V(r, Tsingle)), BR(V(twin_reg r, Tsingle)))
       else BR(V(r, ty))
   | BR_none -> BR_none
-  | BR_splitlong _ -> assert false
+  | BR_splitlong _ | BR_splitfloat _ -> assert false
 
 let rec constrain_builtin_arg a cl =
   match a, cl with
@@ -185,6 +191,10 @@ let rec constrain_builtin_arg a cl =
       let (hi', cl1) = constrain_builtin_arg hi cl in
       let (lo', cl2) = constrain_builtin_arg lo cl1 in
       (BA_splitlong(hi', lo'), cl2)
+  | BA_splitfloat(hi, lo), _ ->
+      let (hi', cl1) = constrain_builtin_arg hi cl in
+      let (lo', cl2) = constrain_builtin_arg lo cl1 in
+      (BA_splitfloat(hi', lo'), cl2)
   | _, _ -> (a, cl)
 
 let rec constrain_builtin_args al cl =
@@ -203,21 +213,27 @@ let rec constrain_builtin_res a cl =
       let (hi', cl1) = constrain_builtin_res hi cl in
       let (lo', cl2) = constrain_builtin_res lo cl1 in
       (BR_splitlong(hi', lo'), cl2)
+  | BR_splitfloat(hi, lo), _ ->
+      let (hi', cl1) = constrain_builtin_res hi cl in
+      let (lo', cl2) = constrain_builtin_res lo cl1 in
+      (BR_splitfloat(hi', lo'), cl2)
   | _, _ -> (a, cl)
 
 (* Return the XTL basic block corresponding to the given RTL instruction.
    Move and parallel move instructions are introduced to honor calling
    conventions and register constraints on some operations.
    64-bit integer variables are split in two 32-bit halves
-   if [Archi.splitlong] is true. *)
+   if [Archi.splitlong] is true, and similarly for [Archi.splitfloat]. *)
 
 let block_of_RTL_instr funsig tyenv = function
   | RTL.Inop s ->
       [Xbranch s]
   | RTL.Iop(Omove, [arg], res, s) ->
-      if Archi.splitlong && tyenv arg = Tlong then
-        [Xmove(V(arg, Tint), V(res, Tint));
-         Xmove(V(twin_reg arg, Tint), V(twin_reg res, Tint));
+      if Archi.splitlong && tyenv arg = Tlong ||
+         Archi.splitfloat && tyenv arg = Tfloat then
+        let subtyp = if tyenv arg = Tlong then Tint else Tsingle in
+        [Xmove(V(arg, subtyp), V(res, subtyp));
+         Xmove(V(twin_reg arg, subtyp), V(twin_reg res, subtyp));
          Xbranch s]
       else
         [Xmove(vreg tyenv arg, vreg tyenv res); Xbranch s]
@@ -244,26 +260,34 @@ let block_of_RTL_instr funsig tyenv = function
               let t = new_temp (tyenv res) in (t :: args2', t) in
       movelist args1 args3 (Xop(op, args3, res3) :: move res3 res1 [Xbranch s])
   | RTL.Iload(chunk, addr, args, dst, s) ->
-      if Archi.splitlong && chunk = Mint64 then begin
+      if Archi.splitlong && chunk = Mint64 ||
+         Archi.splitfloat && chunk = Mfloat64 then begin
+        let (subchunk, typ) =
+          if chunk = Mint64 then (Mint32, Tint) else (Mfloat32, Tsingle)
+        in
         match offset_addressing addr (coqint_of_camlint 4l) with
         | None -> assert false
         | Some addr' ->
-            [Xload(Mint32, addr, vregs tyenv args,
-                   V((if Archi.big_endian then dst else twin_reg dst), Tint));
-             Xload(Mint32, addr', vregs tyenv args,
-                   V((if Archi.big_endian then twin_reg dst else dst), Tint));
+            [Xload(subchunk, addr, vregs tyenv args,
+                   V((if Archi.big_endian then dst else twin_reg dst), typ));
+             Xload(subchunk, addr', vregs tyenv args,
+                   V((if Archi.big_endian then twin_reg dst else dst), typ));
              Xbranch s]
       end else
         [Xload(chunk, addr, vregs tyenv args, vreg tyenv dst); Xbranch s]
   | RTL.Istore(chunk, addr, args, src, s) ->
-      if Archi.splitlong && chunk = Mint64 then begin
+      if Archi.splitlong && chunk = Mint64 ||
+         Archi.splitfloat && chunk = Mfloat64 then begin
+        let (subchunk, typ) =
+          if chunk = Mint64 then (Mint32, Tint) else (Mfloat32, Tsingle)
+        in
         match offset_addressing addr (coqint_of_camlint 4l) with
         | None -> assert false
         | Some addr' ->
-            [Xstore(Mint32, addr, vregs tyenv args,
-                   V((if Archi.big_endian then src else twin_reg src), Tint));
-             Xstore(Mint32, addr', vregs tyenv args,
-                   V((if Archi.big_endian then twin_reg src else src), Tint));
+            [Xstore(subchunk, addr, vregs tyenv args,
+                   V((if Archi.big_endian then src else twin_reg src), typ));
+             Xstore(subchunk, addr', vregs tyenv args,
+                   V((if Archi.big_endian then twin_reg src else src), typ));
              Xbranch s]
       end else
         [Xstore(chunk, addr, vregs tyenv args, vreg tyenv src); Xbranch s]
@@ -335,6 +359,7 @@ let rec vset_addarg a after =
   match a with
   | BA v -> VSet.add v after
   | BA_splitlong(hi, lo) -> vset_addarg hi (vset_addarg lo after)
+  | BA_splitfloat(hi, lo) -> vset_addarg hi (vset_addarg lo after)
   | _ -> after
 
 let vset_addargs al after = List.fold_right vset_addarg al after
@@ -344,6 +369,7 @@ let rec vset_removeres r after =
   | BR v -> VSet.remove v after
   | BR_none -> after
   | BR_splitlong(hi, lo) -> vset_removeres hi (vset_removeres lo after)
+  | BR_splitfloat(hi, lo) -> vset_removeres hi (vset_removeres lo after)
 
 let live_before instr after =
   match instr with
@@ -432,7 +458,7 @@ let rec dce_parmove srcs dsts after =
 
 let rec keep_builtin_arg after = function
   | BA v -> VSet.mem v after
-  | BA_splitlong(hi, lo) ->
+  | BA_splitlong(hi, lo) | BA_splitfloat(hi, lo) ->
       keep_builtin_arg after hi && keep_builtin_arg after lo
   | _ -> true
 
@@ -847,6 +873,10 @@ let rec reload_arg tospill eqs = function
       let (hi', c1, eqs1) = reload_arg tospill eqs hi in
       let (lo', c2, eqs2) = reload_arg tospill eqs1 lo in
       (BA_splitlong(hi', lo'), c1 @ c2, eqs2)
+  | BA_splitfloat(hi, lo) ->
+      let (hi', c1, eqs1) = reload_arg tospill eqs hi in
+      let (lo', c2, eqs2) = reload_arg tospill eqs1 lo in
+      (BA_splitfloat(hi', lo'), c1 @ c2, eqs2)
   | a -> (a, [], eqs)
 
 let rec reload_args tospill eqs = function
@@ -874,6 +904,10 @@ let rec save_res tospill eqs = function
       let (hi', c1, eqs1) = save_res tospill eqs hi in
       let (lo', c2, eqs2) = save_res tospill eqs1 lo in
       (BR_splitlong(hi', lo'), c1 @ c2, eqs2)
+  | BR_splitfloat(hi, lo) ->
+      let (hi', c1, eqs1) = save_res tospill eqs hi in
+      let (lo', c2, eqs2) = save_res tospill eqs1 lo in
+      (BR_splitfloat(hi', lo'), c1 @ c2, eqs2)
 
 (* Trimming equations when we have too many or when they are too old.
    The goal is to limit the live range of unspillable temporaries.

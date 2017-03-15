@@ -562,30 +562,34 @@ End TRANSF_PARTIAL_FUNDEF.
 
 Set Contextual Implicit.
 
-(** In some intermediate languages (LTL, Mach), 64-bit integers can be
-  split into two 32-bit halves and held in a pair of registers.  
+(** In some intermediate languages (LTL, Mach), 64-bit integers or floats
+  can be split into two 32-bit halves and held in a pair of registers.
   Syntactically, this is captured by the type [rpair] below. *)
 
 Inductive rpair (A: Type) : Type :=
-  | One (r: A)
-  | Twolong (rhi rlo: A).
+  | One (r: A)                   (**r single register *)
+  | Twolong (rhi rlo: A)         (**r 64-bit integer register pair *)
+  | Twofloat (rhi rlo: A).       (**r 64-bit floating point register pair *)
 
 Definition typ_rpair (A: Type) (typ_of: A -> typ) (p: rpair A): typ :=
   match p with
   | One r => typ_of r
   | Twolong rhi rlo => Tlong
+  | Twofloat rhi rho => Tfloat
   end.
 
 Definition map_rpair (A B: Type) (f: A -> B) (p: rpair A): rpair B :=
   match p with
   | One r => One (f r)
   | Twolong rhi rlo => Twolong (f rhi) (f rlo)
+  | Twofloat rhi rlo => Twofloat (f rhi) (f rlo)
   end.
 
 Definition regs_of_rpair (A: Type) (p: rpair A): list A :=
   match p with
   | One r => r :: nil
   | Twolong rhi rlo => rhi :: rlo :: nil
+  | Twofloat rhi rlo => rhi :: rlo :: nil
   end.
 
 Fixpoint regs_of_rpairs (A: Type) (l: list (rpair A)): list A :=
@@ -613,6 +617,7 @@ Definition forall_rpair (A: Type) (P: A -> Prop) (p: rpair A): Prop :=
   match p with
   | One r => P r
   | Twolong rhi rlo => P rhi /\ P rlo
+  | Twofloat rhi rlo => P rhi /\ P rlo
   end.
 
 (** * Arguments and results to builtin functions *)
@@ -627,18 +632,21 @@ Inductive builtin_arg (A: Type) : Type :=
   | BA_addrstack (ofs: ptrofs)
   | BA_loadglobal (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
   | BA_addrglobal (id: ident) (ofs: ptrofs)
-  | BA_splitlong (hi lo: builtin_arg A).
+  | BA_splitlong (hi lo: builtin_arg A)
+  | BA_splitfloat (hi lo: builtin_arg A).
 
 Inductive builtin_res (A: Type) : Type :=
   | BR (x: A)
   | BR_none
-  | BR_splitlong (hi lo: builtin_res A).
+  | BR_splitlong (hi lo: builtin_res A)
+  | BR_splitfloat (hi lo: builtin_res A).
 
 Fixpoint globals_of_builtin_arg (A: Type) (a: builtin_arg A) : list ident :=
   match a with
   | BA_loadglobal chunk id ofs => id :: nil
   | BA_addrglobal id ofs => id :: nil
   | BA_splitlong hi lo => globals_of_builtin_arg hi ++ globals_of_builtin_arg lo
+  | BA_splitfloat hi lo => globals_of_builtin_arg hi ++ globals_of_builtin_arg lo
   | _ => nil
   end.
 
@@ -649,6 +657,7 @@ Fixpoint params_of_builtin_arg (A: Type) (a: builtin_arg A) : list A :=
   match a with
   | BA x => x :: nil
   | BA_splitlong hi lo => params_of_builtin_arg hi ++ params_of_builtin_arg lo
+  | BA_splitfloat hi lo => params_of_builtin_arg hi ++ params_of_builtin_arg lo
   | _ => nil
   end.
 
@@ -660,6 +669,7 @@ Fixpoint params_of_builtin_res (A: Type) (a: builtin_res A) : list A :=
   | BR x => x :: nil
   | BR_none => nil
   | BR_splitlong hi lo => params_of_builtin_res hi ++ params_of_builtin_res lo
+  | BR_splitfloat hi lo => params_of_builtin_res hi ++ params_of_builtin_res lo
   end.
 
 Fixpoint map_builtin_arg (A B: Type) (f: A -> B) (a: builtin_arg A) : builtin_arg B :=
@@ -675,6 +685,8 @@ Fixpoint map_builtin_arg (A B: Type) (f: A -> B) (a: builtin_arg A) : builtin_ar
   | BA_addrglobal id ofs => BA_addrglobal id ofs
   | BA_splitlong hi lo =>
       BA_splitlong (map_builtin_arg f hi) (map_builtin_arg f lo)
+  | BA_splitfloat hi lo =>
+      BA_splitfloat (map_builtin_arg f hi) (map_builtin_arg f lo)
   end.
 
 Fixpoint map_builtin_res (A B: Type) (f: A -> B) (a: builtin_res A) : builtin_res B :=
@@ -683,6 +695,8 @@ Fixpoint map_builtin_res (A B: Type) (f: A -> B) (a: builtin_res A) : builtin_re
   | BR_none => BR_none
   | BR_splitlong hi lo =>
       BR_splitlong (map_builtin_res f hi) (map_builtin_res f lo)
+  | BR_splitfloat hi lo =>
+      BR_splitfloat (map_builtin_res f hi) (map_builtin_res f lo)
   end.
 
 (** Which kinds of builtin arguments are supported by which external function. *)
@@ -698,7 +712,7 @@ Inductive builtin_arg_constraint : Type :=
 Definition builtin_arg_ok
        (A: Type) (ba: builtin_arg A) (c: builtin_arg_constraint) :=
   match ba, c with
-  | (BA _ | BA_splitlong (BA _) (BA _)), _ => true
+  | (BA _ | BA_splitlong (BA _) (BA _) | BA_splitfloat (BA _) (BA _)), _ => true
   | (BA_int _ | BA_long _ | BA_float _ | BA_single _), OK_const => true
   | BA_addrstack _, (OK_addrstack | OK_addrany) => true
   | BA_addrglobal _ _, (OK_addrglobal | OK_addrany) => true

@@ -177,7 +177,7 @@ Proof.
   destruct (propagate_float_constants tt); constructor.
   rewrite Ptrofs.add_zero_l; eauto with va.
   fold (Val.sub (Vint i) a1). auto with va.
-  apply floatofwords_sound; auto.
+  try apply floatofwords_sound; auto.
   apply of_optbool_sound. eapply eval_static_condition_sound; eauto.
 Qed.
 

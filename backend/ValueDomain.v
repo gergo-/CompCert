@@ -2399,6 +2399,18 @@ Proof.
   intros. unfold floatofwords; inv H; simpl; auto with va; inv H0; auto with va.
 Qed.
 
+Definition floatofsingles (x y: aval) :=
+  match x, y with
+  | FS i, FS j => F(Float.from_words (Float32.to_bits i) (Float32.to_bits j))
+  | _, _     => ntop2 x y
+  end.
+
+Lemma floatofsingles_sound:
+  forall v w x y, vmatch v x -> vmatch w y -> vmatch (Val.floatofsingles v w) (floatofsingles x y).
+Proof.
+  intros. unfold floatofsingles; inv H; simpl; auto with va; inv H0; auto with va.
+Qed.
+
 Definition longofwords (x y: aval) :=
   match y, x with
   | I j, I i => L(Int64.ofwords i j)
@@ -4584,6 +4596,7 @@ Hint Resolve cnot_sound symbol_address_sound
        intofsingle_sound intuofsingle_sound singleofint_sound singleofintu_sound
        longoffloat_sound longuoffloat_sound floatoflong_sound floatoflongu_sound
        longofsingle_sound longuofsingle_sound singleoflong_sound singleoflongu_sound
+       floatofwords_sound floatofsingles_sound
        longofwords_sound loword_sound hiword_sound
        cmpu_bool_sound cmp_bool_sound cmplu_bool_sound cmpl_bool_sound
        cmpf_bool_sound cmpfs_bool_sound

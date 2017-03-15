@@ -68,6 +68,7 @@ let rec vlocpairs = function
   | [] -> []
   | One l :: ll -> L l :: vlocpairs ll
   | Twolong(l1, l2) :: ll -> L l1 :: L l2 :: vlocpairs ll
+  | Twofloat(l1, l2) :: ll -> L l1 :: L l2 :: vlocpairs ll
 
 (* Tests over variables *)
 

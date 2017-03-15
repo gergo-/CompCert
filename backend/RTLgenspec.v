@@ -1228,6 +1228,7 @@ Proof.
 + constructor. eauto with rtlg.
 + constructor.
 - monadInv TR.
+- monadInv TR.
 Qed.
 
 Lemma transl_stmt_charact:

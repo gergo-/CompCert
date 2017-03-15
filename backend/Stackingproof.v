@@ -521,6 +521,7 @@ Proof.
   intros. destruct p; simpl.
   apply frame_set_reg; auto.
   apply frame_set_reg; apply frame_set_reg; auto.
+  apply frame_set_reg; apply frame_set_reg; auto.
 Qed.
 
 Corollary frame_set_res:
@@ -531,6 +532,7 @@ Proof.
   induction res; simpl; intros.
 - apply frame_set_reg; auto.
 - auto.
+- eauto.
 - eauto.
 Qed.
 
@@ -628,6 +630,8 @@ Proof.
 - apply agree_regs_set_reg; auto.
 - apply agree_regs_set_reg. apply agree_regs_set_reg; auto. 
   apply Val.hiword_inject; auto. apply Val.loword_inject; auto.
+- apply agree_regs_set_reg. apply agree_regs_set_reg; auto.
+  apply Val.hiwordf_inject; auto. apply Val.lowordf_inject; auto.
 Qed.
 
 Lemma agree_regs_set_res:
@@ -642,6 +646,9 @@ Proof.
 - apply IHres2. apply IHres1. auto.
   apply Val.hiword_inject; auto.
   apply Val.loword_inject; auto.
+- apply IHres2. apply IHres1. auto.
+  apply Val.hiwordf_inject; auto.
+  apply Val.lowordf_inject; auto.
 Qed.
 
 Lemma agree_regs_exten:
@@ -729,6 +736,9 @@ Proof.
   destruct H0.
   apply agree_locs_set_reg; auto. apply agree_locs_set_reg; auto.
   apply caller_save_reg_within_bounds; auto. apply caller_save_reg_within_bounds; auto. 
+  destruct H0.
+  apply agree_locs_set_reg; auto. apply agree_locs_set_reg; auto.
+  apply caller_save_reg_within_bounds; auto. apply caller_save_reg_within_bounds; auto.
 Qed.
 
 Lemma agree_locs_set_res:
@@ -740,6 +750,7 @@ Proof.
   induction res; simpl; intros.
 - eapply agree_locs_set_reg; eauto.
 - auto.
+- apply IHres2; auto using in_or_app.
 - apply IHres2; auto using in_or_app.
 Qed.
 
@@ -1649,7 +1660,7 @@ Lemma transl_external_argument_2:
   In p (loc_arguments sg) ->
   exists v, extcall_arg_pair rs m' (parent_sp cs') p v /\ Val.inject j (Locmap.getpair p ls) v.
 Proof.
-  intros. destruct p as [l | l1 l2].
+  intros. destruct p as [l | l1 l2 | l1 l2].
 - destruct (transl_external_argument l) as (v & A & B). eapply in_regs_of_rpairs; eauto; simpl; auto.
   exists v; split; auto. constructor; auto. 
 - destruct (transl_external_argument l1) as (v1 & A1 & B1). eapply in_regs_of_rpairs; eauto; simpl; auto.
@@ -1657,6 +1668,11 @@ Proof.
   exists (Val.longofwords v1 v2); split. 
   constructor; auto.
   apply Val.longofwords_inject; auto.
+- destruct (transl_external_argument l1) as (v1 & A1 & B1). eapply in_regs_of_rpairs; eauto; simpl; auto.
+  destruct (transl_external_argument l2) as (v2 & A2 & B2). eapply in_regs_of_rpairs; eauto; simpl; auto.
+  exists (Val.floatofsingles v1 v2); split.
+  constructor; auto.
+  apply Val.floatofsingles_inject; auto.
 Qed.
 
 Lemma transl_external_arguments_rec:
@@ -1744,6 +1760,10 @@ Local Opaque fe.
   destruct IHeval_builtin_arg2 as (v2 & A2 & B2); auto using in_or_app.
   exists (Val.longofwords v1 v2); split; auto with barg.
   apply Val.longofwords_inject; auto.
+- destruct IHeval_builtin_arg1 as (v1 & A1 & B1); auto using in_or_app.
+  destruct IHeval_builtin_arg2 as (v2 & A2 & B2); auto using in_or_app.
+  exists (Val.floatofsingles v1 v2); split; auto with barg.
+  apply Val.floatofsingles_inject; auto.
 Qed.
 
 Lemma transl_builtin_args_correct:
@@ -2157,8 +2177,9 @@ Lemma transf_final_states:
 Proof.
   intros. inv H0. inv H. inv STACKS.
   assert (R: exists r, loc_result signature_main = One r).
-  { destruct (loc_result signature_main) as [r1 | r1 r2] eqn:LR.
+  { destruct (loc_result signature_main) as [r1 | r1 r2 | r1 r2] eqn:LR.
   - exists r1; auto.
+  - generalize (loc_result_type signature_main). rewrite LR. discriminate.
   - generalize (loc_result_type signature_main). rewrite LR. discriminate.
   }
   destruct R as [rres EQ]. rewrite EQ in H1. simpl in H1.

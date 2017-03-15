@@ -1057,6 +1057,17 @@ Proof.
   rewrite CV2, CV4; simpl. intros (v2' & A2 & B2 & C2).
   exists (Val.longofwords v1' v2'); split. constructor; auto.
   split; auto. apply Val.longofwords_lessdef; auto.
+- destruct (convert_builtin_arg a1 vl) as [a1' vl1] eqn:CV1; simpl in *.
+  destruct (convert_builtin_arg a2 vl1) as [a2' vl2] eqn:CV2; simpl in *.
+  destruct (convert_builtin_arg a1 rl) as [a1'' rl1] eqn:CV3; simpl in *.
+  destruct (convert_builtin_arg a2 rl1) as [a2'' rl2] eqn:CV4; simpl in *.
+  inv EV.
+  exploit IHa1; eauto. rewrite CV1; simpl; eauto.
+  rewrite CV1, CV3; simpl. intros (v1' & A1 & B1 & C1).
+  exploit IHa2. eexact C1. rewrite CV2; simpl; eauto.
+  rewrite CV2, CV4; simpl. intros (v2' & A2 & B2 & C2).
+  exists (Val.floatofsingles v1' v2'); split. constructor; auto.
+  split; auto. apply Val.floatofsingles_lessdef; auto.
 Qed.
 
 Lemma transl_eval_builtin_args:

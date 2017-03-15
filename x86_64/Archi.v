@@ -28,10 +28,16 @@ Definition align_int64 := 8%Z.
 Definition align_float64 := 8%Z.
 
 Definition splitlong := negb ptr64.
+Definition splitfloat := false.
 
 Lemma splitlong_ptr32: splitlong = true -> ptr64 = false.
 Proof.
   unfold splitlong. destruct ptr64; simpl; congruence. 
+Qed.
+
+Lemma splitfloat_align_float64: splitfloat = true -> align_float64 = 8%Z.
+Proof.
+  unfold splitfloat, align_float64; congruence.
 Qed.
 
 Program Definition default_pl_64 : bool * nan_pl 53 :=
@@ -48,7 +54,7 @@ Definition choose_binop_pl_32 (s1: bool) (pl1: nan_pl 24) (s2: bool) (pl2: nan_p
 
 Definition float_of_single_preserves_sNaN := false.
 
-Global Opaque ptr64 big_endian splitlong
+Global Opaque ptr64 big_endian splitlong splitfloat
               default_pl_64 choose_binop_pl_64
               default_pl_32 choose_binop_pl_32
               float_of_single_preserves_sNaN.

@@ -853,6 +853,10 @@ Proof.
   destruct IHeval_builtin_arg2 as (v2' & A2 & B2); eauto using in_or_app.
   exists (Val.longofwords v1' v2'); split; auto with barg.
   apply Val.longofwords_inject; auto.
+- destruct IHeval_builtin_arg1 as (v1' & A1 & B1); eauto using in_or_app.
+  destruct IHeval_builtin_arg2 as (v2' & A2 & B2); eauto using in_or_app.
+  exists (Val.floatofsingles v1' v2'); split; auto with barg.
+  apply Val.floatofsingles_inject; auto.
 Qed.
 
 Lemma eval_builtin_args_inject:

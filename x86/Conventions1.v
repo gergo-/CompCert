@@ -138,7 +138,9 @@ Proof.
   destruct Archi.ptr64; destruct (sig_res s) as [[]|]; simpl; auto.
 Qed.
 
-(** If the result is in a pair of registers, those registers are distinct and have type [Tint] at least. *)
+(** If the result is in a pair of integer or floating-point registers, those
+  registers are distinct and have at least type [Tint] or [Tsingle],
+  respectively. *)
 
 Lemma loc_result_pair:
   forall sg,
@@ -148,6 +150,10 @@ Lemma loc_result_pair:
        r1 <> r2 /\ sg.(sig_res) = Some Tlong
     /\ subtype Tint (mreg_type r1) = true /\ subtype Tint (mreg_type r2) = true 
     /\ Archi.splitlong = true
+  | Twofloat r1 r2 =>
+       r1 <> r2 /\ sg.(sig_res) = Some Tfloat
+    /\ subtype Tsingle (mreg_type r1) = true /\ subtype Tsingle (mreg_type r2) = true
+    /\ Archi.splitfloat = true
   end.
 Proof.
   intros. change Archi.splitlong with (negb Archi.ptr64).
@@ -176,7 +182,7 @@ Fixpoint loc_arguments_32
   | ty :: tys =>
       match ty with
       | Tlong => Twolong (S Outgoing (ofs + 1) Tint) (S Outgoing ofs Tint)
-      | _     => One (S Outgoing ofs ty)
+      | _     => One (S Outgoing (align ofs (typealign ty)) ty)
       end
       :: loc_arguments_32 tys (ofs + typesize ty)
   end.
@@ -234,7 +240,7 @@ Fixpoint size_arguments_32
     (tyl: list typ) (ofs: Z) {struct tyl} : Z :=
   match tyl with
   | nil => ofs
-  | ty :: tys => size_arguments_32 tys (ofs + typesize ty)
+  | ty :: tys => size_arguments_32 tys (align ofs (typealign ty) + typesize ty)
   end.
 
 Fixpoint size_arguments_64 (tyl: list typ) (ir fr ofs: Z) {struct tyl} : Z :=
@@ -269,7 +275,7 @@ Definition loc_argument_acceptable (l: loc) : Prop :=
 
 Definition loc_argument_32_charact (ofs: Z) (l: loc) : Prop :=
   match l with
-  | S Outgoing ofs' ty => ofs' >= ofs /\ typealign ty = 1
+  | S Outgoing ofs' ty => ofs' >= ofs /\ (typealign ty | ofs')
   | _ => False
   end.
 
@@ -290,10 +296,11 @@ Proof.
   induction tyl as [ | ty tyl]; simpl loc_arguments_32; intros until p.
 - contradiction.
 - intros Align H. destruct H.
-+ destruct ty; subst p; simpl; unfold Archi.align_float64 in *;
-    try auto with zarith; try byContradiction; try omega.
++ destruct ty; subst p; simpl; unfold Archi.align_float64 in *; change (4 / 4) with 1;
+    try auto using align_divides, Z.le_ge, align_le with zarith; try byContradiction; try omega.
 + apply IHtyl in H; try auto. generalize (typesize_pos ty); intros. destruct p; simpl in *.
 * eapply X; eauto; omega.
+* destruct H; split; eapply X; eauto; omega.
 * destruct H; split; eapply X; eauto; omega.
 Qed.
 
@@ -354,7 +361,7 @@ Proof.
 - (* 32 bits *)
   generalize ptr64_align_float_64. intro. rewrite SF in H0.
   assert (X: forall l, loc_argument_32_charact 0 l -> loc_argument_acceptable l).
-  { destruct l as [r | [] ofs ty]; simpl; intuition auto. rewrite H3; apply Z.divide_1_l. }
+  { destruct l as [r | [] ofs ty]; simpl; intuition auto. }
   exploit loc_arguments_32_charact; eauto. 
   unfold forall_rpair; destruct p; intuition auto.
 Qed.
@@ -368,8 +375,27 @@ Remark size_arguments_32_above:
 Proof.
   induction tyl; simpl; intros.
   omega.
-  apply Zle_trans with (ofs0 + typesize a); auto.
-  generalize (typesize_pos a); omega.
+  apply Zle_trans with (align ofs0 (typealign a) + typesize a); auto.
+  generalize (typesize_pos a); intro.
+  apply Zle_trans with (align ofs0 (typealign a)); auto using Z.le_ge, align_le, typealign_pos with zarith.
+Qed.
+
+Remark align_mono:
+  forall x x' a,
+  x <= x' -> a > 0 -> align x a <= align x' a.
+Proof.
+  unfold align.
+  auto using Zmult_le_compat_r, Z_div_le with zarith.
+Qed.
+
+Remark size_arguments_32_mono:
+  forall tyl ofs0 ofs1,
+  ofs0 <= ofs1 -> size_arguments_32 tyl ofs0 <= size_arguments_32 tyl ofs1.
+Proof.
+  induction tyl; simpl; intros.
+  - trivial.
+  - destruct a; simpl; unfold Archi.align_float64 in *; try change (4 / 4) with 1; try change (8 / 4) with 2;
+      apply IHtyl; auto using align_mono with zarith.
 Qed.
 
 Remark size_arguments_64_above:
@@ -410,15 +436,22 @@ Proof.
   induction tyl as [ | t l]; simpl; intros x IN.
 - contradiction.
 - rewrite in_app_iff in IN; destruct IN as [IN|IN].
-+ apply Zle_trans with (x + typesize t); [|apply size_arguments_32_above].
++ apply Zle_trans with (align x (typealign t) + typesize t); [|apply size_arguments_32_above].
   Ltac decomp :=
   match goal with
   | [ H: _ \/ _ |- _ ] => destruct H; decomp
   | [ H: S _ _ _ = S _ _ _ |- _ ] => inv H
   | [ H: False |- _ ] => contradiction
   end.
-  destruct t; simpl in IN; decomp; simpl; omega.
-+ apply IHl; auto.
+  destruct t; simpl in IN; decomp; simpl; try omega.
+  rewrite <- Z.add_assoc; auto using Z.le_ge, align_le with zarith.
+  auto using Z.le_ge, align_le with zarith.
++ apply Zle_trans with (m := size_arguments_32 l (x + typesize t)).
+  apply IHl; auto.
+  apply size_arguments_32_mono.
+  unfold typealign.
+  destruct t; unfold Archi.align_float64 in *; try change (4 / 4) with 1; try change (8 / 4) with 2;
+    auto using align_le with zarith.
 Qed.
 
 Lemma loc_arguments_64_bounded:

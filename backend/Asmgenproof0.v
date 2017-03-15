@@ -253,6 +253,8 @@ Proof.
 - apply agree_set_mreg_parallel; auto.
 - apply agree_set_mreg_parallel. apply agree_set_mreg_parallel; auto.
   apply Val.hiword_lessdef; auto. apply Val.loword_lessdef; auto.
+- apply agree_set_mreg_parallel. apply agree_set_mreg_parallel; auto.
+  apply Val.hiwordf_lessdef; auto. apply Val.lowordf_lessdef; auto.
 Qed.
 
 Lemma agree_undef_nondata_regs:
@@ -339,6 +341,9 @@ Proof.
 - exploit extcall_arg_match. eauto. eauto. eexact H2. intros (v1 & A1 & B1).
   exploit extcall_arg_match. eauto. eauto. eexact H3. intros (v2 & A2 & B2).
   exists (Val.longofwords v1 v2); split. constructor; auto. apply Val.longofwords_lessdef; auto. 
+- exploit extcall_arg_match. eauto. eauto. eexact H2. intros (v1 & A1 & B1).
+  exploit extcall_arg_match. eauto. eauto. eexact H3. intros (v2 & A2 & B2).
+  exists (Val.floatofsingles v1 v2); split. constructor; auto. apply Val.floatofsingles_lessdef; auto.
 Qed.
 
 Lemma extcall_args_match:
@@ -402,6 +407,9 @@ Proof.
 - apply IHres2. apply IHres1. auto.
   apply Val.hiword_lessdef; auto.
   apply Val.loword_lessdef; auto.
+- apply IHres2. apply IHres1. auto.
+  apply Val.hiwordf_lessdef; auto.
+  apply Val.lowordf_lessdef; auto.
 Qed.
 
 Lemma set_res_other:
@@ -412,6 +420,7 @@ Proof.
   induction res; simpl; intros.
 - apply Pregmap.gso. red; intros; subst r. rewrite preg_of_data in H; discriminate.
 - auto.
+- rewrite IHres2, IHres1; auto.
 - rewrite IHres2, IHres1; auto.
 Qed.
 

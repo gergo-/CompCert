@@ -24,6 +24,7 @@ Fixpoint safe_builtin_arg {A: Type} (a: builtin_arg A) : Prop :=
   match a with
   | BA _ | BA_int _ | BA_long _ | BA_float _ | BA_single _ => True
   | BA_splitlong hi lo => safe_builtin_arg hi /\ safe_builtin_arg lo
+  | BA_splitfloat hi lo => safe_builtin_arg hi /\ safe_builtin_arg lo
   | _ => False
   end.
 
@@ -40,6 +41,7 @@ Definition normalize_debug_1 (a: builtin_arg loc) : option debuginfo :=
   | BA_float n => Some (exist _ (BA_float n) I)
   | BA_single n => Some (exist _ (BA_single n) I)
   | BA_splitlong (BA hi) (BA lo) => Some (exist _ (BA_splitlong (BA hi) (BA lo)) (conj I I))
+  | BA_splitfloat (BA hi) (BA lo) => Some (exist _ (BA_splitfloat (BA hi) (BA lo)) (conj I I))
   | _ => None
   end.
 
@@ -105,6 +107,7 @@ Fixpoint arg_no_overlap (a: builtin_arg loc) (l: loc) : bool :=
   match a with
   | BA l' => Loc.diff_dec l' l
   | BA_splitlong hi lo => arg_no_overlap hi l && arg_no_overlap lo l
+  | BA_splitfloat hi lo => arg_no_overlap hi l && arg_no_overlap lo l
   | _ => true
   end.
 
@@ -116,6 +119,7 @@ Fixpoint kill_res (r: builtin_res mreg) (s: avail) : avail :=
   | BR r => kill (R r) s
   | BR_none => s
   | BR_splitlong hi lo => kill_res hi (kill_res lo s)
+  | BR_splitfloat hi lo => kill_res hi (kill_res lo s)
   end.
 
 (** Likewise when a function call takes place. *)
@@ -125,6 +129,7 @@ Fixpoint arg_preserved (a: builtin_arg loc) : bool :=
   | BA (R r) => negb (List.In_dec mreg_eq r destroyed_at_call)
   | BA (S _ _ _) => true
   | BA_splitlong hi lo => arg_preserved hi && arg_preserved lo
+  | BA_splitfloat hi lo => arg_preserved hi && arg_preserved lo
   | _ => true
   end.
 

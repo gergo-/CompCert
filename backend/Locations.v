@@ -390,12 +390,14 @@ Module Locmap.
     match p with
     | One l => m l
     | Twolong l1 l2 => Val.longofwords (m l1) (m l2)
+    | Twofloat l1 l2 => Val.floatofsingles (m l1) (m l2)
     end.
 
   Definition setpair (p: rpair mreg) (v: val) (m: t) : t :=
     match p with
     | One r => set (R r) v m
-    | Twolong hi lo => set (R lo) (Val.loword  v) (set (R hi) (Val.hiword v) m)
+    | Twolong hi lo => set (R lo) (Val.loword v) (set (R hi) (Val.hiword v) m)
+    | Twofloat hi lo => set (R lo) (Val.lowordf v) (set (R hi) (Val.hiwordf v) m)
     end.
 
   Lemma getpair_exten:
@@ -405,7 +407,8 @@ Module Locmap.
   Proof.
     intros. destruct p; simpl. 
     apply H; simpl; auto.
-    f_equal; apply H; simpl; auto.
+  - f_equal; apply H; simpl; auto.
+  - f_equal; apply H; simpl; auto.
   Qed.
 
   Lemma gpo:
@@ -415,6 +418,7 @@ Module Locmap.
     intros; destruct p; simpl in *. 
   - apply gso. apply Loc.diff_sym; auto.
   - destruct H. rewrite ! gso by (apply Loc.diff_sym; auto). auto.
+  - destruct H. rewrite ! gso by (apply Loc.diff_sym; auto). auto.
   Qed.
 
   Fixpoint setres (res: builtin_res mreg) (v: val) (m: t) : t :=
@@ -423,6 +427,8 @@ Module Locmap.
     | BR_none => m
     | BR_splitlong hi lo =>
         setres lo (Val.loword v) (setres hi (Val.hiword v) m)
+    | BR_splitfloat hi lo =>
+        setres lo (Val.lowordf v) (setres hi (Val.hiwordf v) m)
     end.
 
 End Locmap.

@@ -348,9 +348,12 @@ Lemma can_eval_safe_arg:
 Proof.
   induction a; simpl; intros; try contradiction;
   try (econstructor; now eauto with barg).
-  destruct H as [S1 S2].
-  destruct (IHa1 S1) as [v1 E1]. destruct (IHa2 S2) as [v2 E2].
-  exists (Val.longofwords v1 v2); auto with barg.
+  - destruct H as [S1 S2].
+    destruct (IHa1 S1) as [v1 E1]. destruct (IHa2 S2) as [v2 E2].
+    exists (Val.longofwords v1 v2); auto with barg.
+  - destruct H as [S1 S2].
+    destruct (IHa1 S1) as [v1 E1]. destruct (IHa2 S2) as [v2 E2].
+    exists (Val.floatofsingles v1 v2); auto with barg.
 Qed.
 
 Lemma eval_add_delta_ranges:

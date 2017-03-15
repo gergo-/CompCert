@@ -77,6 +77,7 @@ Definition type_of_builtin_arg (a: builtin_arg reg) : typ :=
   | BA_loadglobal chunk id ofs => type_of_chunk chunk
   | BA_addrglobal id ofs => Tptr
   | BA_splitlong hi lo => Tlong
+  | BA_splitfloat hi lo => Tfloat
   end.
 
 Definition type_of_builtin_res (r: builtin_res reg) : typ :=
@@ -249,6 +250,7 @@ Definition type_builtin_arg (e: S.typenv) (a: builtin_arg reg) (ty: typ) : res S
   | BA_loadglobal chunk id ofs => type_expect e ty (type_of_chunk chunk)
   | BA_addrglobal id ofs => type_expect e ty Tptr
   | BA_splitlong hi lo => type_expect e ty Tlong
+  | BA_splitfloat hi lo => type_expect e ty Tfloat
   end.
 
 Fixpoint type_builtin_args (e: S.typenv) (al: list (builtin_arg reg)) (tyl: list typ) : res S.typenv :=
@@ -454,6 +456,7 @@ Proof.
   eapply S.set_sound; eauto.
   symmetry; eapply type_expect_sound; eauto.
   symmetry; eapply type_expect_sound; eauto.
+  symmetry; eapply type_expect_sound; eauto.
 Qed.
 
 Lemma type_instr_incr:
@@ -643,6 +646,7 @@ Lemma type_builtin_res_complete:
 Proof.
   intros. destruct a; simpl.
   apply S.set_complete; auto.
+  exists e; auto.
   exists e; auto.
   exists e; auto.
 Qed.

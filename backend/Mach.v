@@ -160,6 +160,7 @@ Definition set_pair (p: rpair mreg) (v: val) (rs: regset) : regset :=
   match p with
   | One r => rs#r <- v
   | Twolong rhi rlo => rs#rhi <- (Val.hiword v) #rlo <- (Val.loword v)
+  | Twofloat rhi rlo => rs#rhi <- (Val.hiwordf v) #rlo <- (Val.lowordf v)
   end.
 
 Fixpoint set_res (res: builtin_res mreg) (v: val) (rs: regset) : regset :=
@@ -167,6 +168,7 @@ Fixpoint set_res (res: builtin_res mreg) (v: val) (rs: regset) : regset :=
   | BR r => Regmap.set r v rs
   | BR_none => rs
   | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
+  | BR_splitfloat hi lo => set_res lo (Val.lowordf v) (set_res hi (Val.hiwordf v) rs)
   end.
 
 Definition is_label (lbl: label) (instr: instruction) : bool :=
@@ -230,7 +232,11 @@ Inductive extcall_arg_pair (rs: regset) (m: mem) (sp: val): rpair loc -> val -> 
   | extcall_arg_twolong: forall hi lo vhi vlo,
       extcall_arg rs m sp hi vhi ->
       extcall_arg rs m sp lo vlo ->
-      extcall_arg_pair rs m sp (Twolong hi lo) (Val.longofwords vhi vlo).
+      extcall_arg_pair rs m sp (Twolong hi lo) (Val.longofwords vhi vlo)
+  | extcall_arg_twofloat: forall hi lo vhi vlo,
+      extcall_arg rs m sp hi vhi ->
+      extcall_arg rs m sp lo vlo ->
+      extcall_arg_pair rs m sp (Twofloat hi lo) (Val.floatofsingles vhi vlo).
 
 Definition extcall_arguments
     (rs: regset) (m: mem) (sp: val) (sg: signature) (args: list val) : Prop :=

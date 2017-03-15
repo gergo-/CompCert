@@ -1555,7 +1555,10 @@ Inductive eval_builtin_arg: builtin_arg A -> val -> Prop :=
       eval_builtin_arg (BA_addrglobal id ofs) (Senv.symbol_address ge id ofs)
   | eval_BA_splitlong: forall hi lo vhi vlo,
       eval_builtin_arg hi vhi -> eval_builtin_arg lo vlo ->
-      eval_builtin_arg (BA_splitlong hi lo) (Val.longofwords vhi vlo).
+      eval_builtin_arg (BA_splitlong hi lo) (Val.longofwords vhi vlo)
+  | eval_BA_splitfloat: forall hi lo vhi vlo,
+      eval_builtin_arg hi vhi -> eval_builtin_arg lo vlo ->
+      eval_builtin_arg (BA_splitfloat hi lo) (Val.floatofsingles vhi vlo).
 
 Definition eval_builtin_args (al: list (builtin_arg A)) (vl: list val) : Prop :=
   list_forall2 eval_builtin_arg al vl.
@@ -1563,8 +1566,7 @@ Definition eval_builtin_args (al: list (builtin_arg A)) (vl: list val) : Prop :=
 Lemma eval_builtin_arg_determ:
   forall a v, eval_builtin_arg a v -> forall v', eval_builtin_arg a v' -> v' = v.
 Proof.
-  induction 1; intros v' EV; inv EV; try congruence.
-  f_equal; eauto.
+  induction 1; intros v' EV; inv EV; try congruence; f_equal; eauto.
 Qed.
 
 Lemma eval_builtin_args_determ:
@@ -1637,6 +1639,9 @@ Proof.
 - destruct IHeval_builtin_arg1 as (vhi' & P & Q).
   destruct IHeval_builtin_arg2 as (vlo' & R & S).
   econstructor; split; eauto with barg. apply Val.longofwords_lessdef; auto.
+- destruct IHeval_builtin_arg1 as (vhi' & P & Q).
+  destruct IHeval_builtin_arg2 as (vlo' & R & S).
+  econstructor; split; eauto with barg. apply Val.floatofsingles_lessdef; auto.
 Qed.
 
 Lemma eval_builtin_args_lessdef:

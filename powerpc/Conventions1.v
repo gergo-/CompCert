@@ -123,7 +123,9 @@ Proof.
   unfold loc_result. destruct (sig_res s) as [[]|]; simpl; auto.
 Qed.
 
-(** If the result is in a pair of registers, those registers are distinct and have type [Tint] at least. *)
+(** If the result is in a pair of integer or floating-point registers, those
+  registers are distinct and have at least type [Tint] or [Tsingle],
+  respectively. *)
 
 Lemma loc_result_pair:
   forall sg,
@@ -133,6 +135,10 @@ Lemma loc_result_pair:
         r1 <> r2 /\ sg.(sig_res) = Some Tlong
      /\ subtype Tint (mreg_type r1) = true /\ subtype Tint (mreg_type r2) = true
      /\ Archi.splitlong = true 
+  | Twofloat r1 r2 =>
+        r1 <> r2 /\ sg.(sig_res) = Some Tfloat
+     /\ subtype Tsingle (mreg_type r1) = true /\ subtype Tsingle (mreg_type r2) = true
+     /\ Archi.splitfloat = true
   end.
 Proof.
   intros; unfold loc_result; destruct (sig_res sg) as [[]|]; auto.

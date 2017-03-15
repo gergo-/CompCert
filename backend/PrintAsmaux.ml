@@ -174,6 +174,10 @@ let rec print_annot print_preg sp_reg_name oc = function
       fprintf oc "(%a * 0x100000000 + %a)"
         (print_annot print_preg sp_reg_name) hi
         (print_annot print_preg sp_reg_name) lo
+  | BA_splitfloat(hi, lo) ->
+      fprintf oc "splitfloat(%a * 0x100000000 + %a)"
+        (print_annot print_preg sp_reg_name) hi
+        (print_annot print_preg sp_reg_name) lo
 
 let print_annot_text print_preg sp_reg_name oc txt args =
   let print_fragment = function
@@ -237,6 +241,7 @@ let print_asm_argument print_preg oc modifier = function
 let builtin_arg_of_res = function
   | BR r -> BA r
   | BR_splitlong(BR hi, BR lo) -> BA_splitlong(BA hi, BA lo)
+  | BR_splitfloat(BR hi, BR lo) -> BA_splitfloat(BA hi, BA lo)
   | _ -> assert false
 
 let re_asm_param_1 = Str.regexp "%%\\|%[QR]?[0-9]+"

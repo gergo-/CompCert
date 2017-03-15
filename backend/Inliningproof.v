@@ -439,6 +439,9 @@ Proof.
 - destruct IHeval_builtin_arg1 as (v1 & A1 & B1).
   destruct IHeval_builtin_arg2 as (v2 & A2 & B2).
   econstructor; split. eauto with barg. apply Val.longofwords_inject; auto.
+- destruct IHeval_builtin_arg1 as (v1 & A1 & B1).
+  destruct IHeval_builtin_arg2 as (v2 & A2 & B2).
+  econstructor; split. eauto with barg. apply Val.floatofsingles_inject; auto.
 Qed.
 
 Lemma tr_builtin_args:
@@ -1084,7 +1087,7 @@ Proof.
     intros; eapply external_call_max_perm; eauto.
     intros; eapply external_call_max_perm; eauto.
   auto. eauto. auto.
-  destruct res; simpl; [apply agree_set_reg;auto|idtac|idtac]; eapply agree_regs_incr; eauto.
+  destruct res; simpl; [apply agree_set_reg;auto|idtac|idtac|idtac]; eapply agree_regs_incr; eauto.
   auto. auto.
   eapply external_call_valid_block; eauto.
   eapply range_private_extcall; eauto.
