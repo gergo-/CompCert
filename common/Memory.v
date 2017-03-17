@@ -70,15 +70,17 @@ Record mem' : Type := mkmem {
   nextblock_noaccess:
     forall b ofs k, ~(Plt b nextblock) -> mem_access#b ofs k = None;
   contents_default:
-    forall b, fst mem_contents#b = Undef
+    forall b, fst mem_contents#b = Undef;
+  size_max:
+    forall b ofs k, ofs > Ptrofs.max_unsigned -> mem_access#b ofs k = None
 }.
 
 Definition mem := mem'.
 
 Lemma mkmem_ext:
- forall cont1 cont2 acc1 acc2 next1 next2 a1 a2 b1 b2 c1 c2,
+ forall cont1 cont2 acc1 acc2 next1 next2 a1 a2 b1 b2 c1 c2 d1 d2,
   cont1=cont2 -> acc1=acc2 -> next1=next2 ->
-  mkmem cont1 acc1 next1 a1 b1 c1 = mkmem cont2 acc2 next2 a2 b2 c2.
+  mkmem cont1 acc1 next1 a1 b1 c1 d1 = mkmem cont2 acc2 next2 a2 b2 c2 d2.
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -140,6 +142,22 @@ Qed.
 
 Local Hint Resolve perm_cur perm_max: mem.
 
+Theorem size_max':
+  forall m b ofs k p, (m.(mem_access)#b ofs k) = Some p -> ofs <= Ptrofs.max_unsigned.
+Proof.
+  intros. apply Znot_gt_le. contradict H.
+  rewrite size_max; auto. intro H0; inversion H0.
+Qed.
+
+Theorem perm_ofs:
+  forall m b ofs k p, perm m b ofs k p -> ofs <= Ptrofs.max_unsigned.
+Proof.
+  intros. unfold perm, perm_order' in H.
+  caseEq (m.(mem_access)#b ofs k).
+  - eapply size_max'.
+  - intro H0. rewrite H0 in H. inversion H.
+Qed.
+
 Theorem perm_valid_block:
   forall m b ofs k p, perm m b ofs k p -> valid_block m b.
 Proof.
@@ -200,6 +218,14 @@ Proof.
 Qed.
 
 Local Hint Resolve range_perm_implies range_perm_cur range_perm_max: mem.
+
+Theorem range_perm_ofs:
+  forall m b lo hi k p,
+  lo < hi -> range_perm m b lo hi k p -> hi <= Ptrofs.max_unsigned + 1.
+Proof.
+  unfold range_perm. intros.
+  apply perm_ofs with (ofs := hi - 1) in H0; auto with zarith.
+Qed.
 
 Lemma range_perm_dec:
   forall m b lo hi k p, {range_perm m b lo hi k p} + {~ range_perm m b lo hi k p}.
@@ -344,9 +370,12 @@ Qed.
 Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
-        1%positive _ _ _.
+        1%positive _ _ _ _.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
+Qed.
+Next Obligation.
+  rewrite PMap.gi. auto.
 Qed.
 Next Obligation.
   rewrite PMap.gi. auto.
@@ -365,14 +394,14 @@ Program Definition alloc (m: mem) (lo hi: Z) :=
                    (ZMap.init Undef)
                    m.(mem_contents))
          (PMap.set m.(nextblock)
-                   (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else None)
+                   (fun ofs k => if zle lo ofs && zlt ofs hi && zle ofs Ptrofs.max_unsigned then Some Freeable else None)
                    m.(mem_access))
          (Psucc m.(nextblock))
-         _ _ _,
+         _ _ _ _,
    m.(nextblock)).
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b (nextblock m)).
-  subst b. destruct (zle lo ofs && zlt ofs hi); red; auto with mem.
+  subst b. destruct (zle lo ofs && zlt ofs hi && zle ofs Ptrofs.max_unsigned); red; auto with mem.
   apply access_max.
 Qed.
 Next Obligation.
@@ -383,6 +412,10 @@ Next Obligation.
 Qed.
 Next Obligation.
   rewrite PMap.gsspec. destruct (peq b (nextblock m)). auto. apply contents_default.
+Qed.
+Next Obligation.
+  rewrite PMap.gsspec. destruct (peq b (nextblock m)); auto using size_max.
+  case_eq (zle lo ofs); case_eq (zlt ofs hi); case_eq (zle ofs Ptrofs.max_unsigned); intros; auto; omega.
 Qed.
 
 (** Freeing a block between the given bounds.
@@ -395,7 +428,7 @@ Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
         (PMap.set b
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
                 m.(mem_access))
-        m.(nextblock) _ _ _.
+        m.(nextblock) _ _ _ _.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b).
   destruct (zle lo ofs && zlt ofs hi). red; auto. apply access_max.
@@ -408,6 +441,12 @@ Next Obligation.
 Qed.
 Next Obligation.
   apply contents_default.
+Qed.
+Next Obligation.
+  repeat rewrite PMap.gsspec. destruct (peq b0 b).
+  (* FIXME use ; *)
+  destruct (zle lo ofs && zlt ofs hi). auto. apply size_max; auto.
+  apply size_max; auto.
 Qed.
 
 Definition free (m: mem) (b: block) (lo hi: Z): option mem :=
@@ -550,7 +589,7 @@ Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: 
                           m.(mem_contents))
                 m.(mem_access)
                 m.(nextblock)
-                _ _ _)
+                _ _ _ _)
   else
     None.
 Next Obligation. apply access_max. Qed.
@@ -560,6 +599,7 @@ Next Obligation.
   rewrite setN_default. apply contents_default.
   apply contents_default.
 Qed.
+Next Obligation. apply size_max; auto. Qed.
 
 (** [storev chunk m addr v] is similar, but the address and offset are given
   as a single value [addr], which must be a pointer value. *)
@@ -580,7 +620,7 @@ Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) 
              (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
              m.(mem_access)
              m.(nextblock)
-             _ _ _)
+             _ _ _ _)
   else
     None.
 Next Obligation. apply access_max. Qed.
@@ -590,6 +630,7 @@ Next Obligation.
   rewrite setN_default. apply contents_default.
   apply contents_default.
 Qed.
+Next Obligation. apply size_max; auto. Qed.
 
 (** [drop_perm m b lo hi p] sets the max permissions of the byte range
     [(b, lo) ... (b, hi - 1)] to [p].  These bytes must have current permissions
@@ -602,7 +643,7 @@ Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): opt
                 (PMap.set b
                         (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
                         m.(mem_access))
-                m.(nextblock) _ _ _)
+                m.(nextblock) _ _ _ _)
   else None.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
@@ -619,6 +660,11 @@ Next Obligation.
 Qed.
 Next Obligation.
   apply contents_default.
+Qed.
+Next Obligation.
+  repeat rewrite PMap.gsspec. destruct (peq b0 b); auto using size_max.
+  case_eq (zle lo ofs); case_eq (zlt ofs hi); intros; try apply size_max; auto.
+  - apply range_perm_ofs in H; omega.
 Qed.
 
 (** * Properties of the memory operations *)
