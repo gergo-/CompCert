@@ -394,14 +394,14 @@ Program Definition alloc (m: mem) (lo hi: Z) :=
                    (ZMap.init Undef)
                    m.(mem_contents))
          (PMap.set m.(nextblock)
-                   (fun ofs k => if zle lo ofs && zlt ofs hi && zle ofs Ptrofs.max_unsigned then Some Freeable else None)
+                   (fun ofs k => if zle lo ofs && zlt ofs hi && zle hi Ptrofs.modulus then Some Freeable else None)
                    m.(mem_access))
          (Psucc m.(nextblock))
          _ _ _ _,
    m.(nextblock)).
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b (nextblock m)).
-  subst b. destruct (zle lo ofs && zlt ofs hi && zle ofs Ptrofs.max_unsigned); red; auto with mem.
+  subst b. destruct (zle lo ofs && zlt ofs hi && zle hi Ptrofs.modulus); red; auto with mem.
   apply access_max.
 Qed.
 Next Obligation.
@@ -415,7 +415,8 @@ Next Obligation.
 Qed.
 Next Obligation.
   rewrite PMap.gsspec. destruct (peq b (nextblock m)); auto using size_max.
-  case_eq (zle lo ofs); case_eq (zlt ofs hi); case_eq (zle ofs Ptrofs.max_unsigned); intros; auto; omega.
+  unfold Ptrofs.max_unsigned in *.
+  case_eq (zle lo ofs); case_eq (zlt ofs hi); case_eq (zle hi Ptrofs.modulus); intros; auto; omega.
 Qed.
 
 (** Freeing a block between the given bounds.
@@ -1720,6 +1721,7 @@ Variables lo hi: Z.
 Variable m2: mem.
 Variable b: block.
 Hypothesis ALLOC: alloc m1 lo hi = (m2, b).
+Hypothesis BOUNDED: hi <= Ptrofs.modulus.
 
 Theorem nextblock_alloc:
   nextblock m2 = Psucc (nextblock m1).
@@ -1775,7 +1777,7 @@ Theorem perm_alloc_2:
 Proof.
   unfold perm; intros. injection ALLOC; intros. rewrite <- H1; simpl.
   subst b. rewrite PMap.gss. unfold proj_sumbool. rewrite zle_true.
-  rewrite zlt_true. simpl. auto with mem. omega. omega.
+  rewrite zlt_true. rewrite zle_true. simpl. auto with mem. omega. omega. omega.
 Qed.
 
 Theorem perm_alloc_inv:
@@ -3035,7 +3037,7 @@ Theorem alloc_extends:
   forall m1 m2 lo1 hi1 b m1' lo2 hi2,
   extends m1 m2 ->
   alloc m1 lo1 hi1 = (m1', b) ->
-  lo2 <= lo1 -> hi1 <= hi2 ->
+  lo2 <= lo1 -> hi1 <= hi2 -> hi2 <= Ptrofs.modulus ->
   exists m2',
      alloc m2 lo2 hi2 = (m2', b)
   /\ extends m1' m2'.
@@ -3066,7 +3068,7 @@ Proof.
   subst b0. 
   assert (EITHER: lo1 <= ofs < hi1 \/ ~(lo1 <= ofs < hi1)) by omega.
   destruct EITHER.
-  left. apply perm_implies with Freeable; auto with mem. eapply perm_alloc_2; eauto.
+  left. apply perm_implies with Freeable; auto with mem. eapply perm_alloc_2; eauto with zarith.
   right; tauto.
   exploit mext_perm_inv0; intuition eauto using perm_alloc_1, perm_alloc_4.
 Qed.
@@ -3810,13 +3812,14 @@ Theorem alloc_left_mapped_inject:
    f b = Some (b2, delta') ->
    perm m1 b ofs k p ->
    lo + delta <= ofs + delta' < hi + delta -> False) ->
+  hi <= Ptrofs.modulus ->
   exists f',
      inject f' m1' m2
   /\ inject_incr f f'
   /\ f' b1 = Some(b2, delta)
   /\ (forall b, b <> b1 -> f' b = f b).
 Proof.
-  intros. inversion H.
+  intros. rename H7 into max. inversion H.
   set (f' := fun b => if eq_block b b1 then Some(b2, delta) else f b).
   assert (inject_incr f f').
     red; unfold f'; intros. destruct (eq_block b b1). subst b.
@@ -3891,7 +3894,7 @@ Theorem alloc_parallel_inject:
   forall f m1 m2 lo1 hi1 m1' b1 lo2 hi2,
   inject f m1 m2 ->
   alloc m1 lo1 hi1 = (m1', b1) ->
-  lo2 <= lo1 -> hi1 <= hi2 ->
+  lo2 <= lo1 -> hi1 <= hi2 -> hi2 <= Ptrofs.modulus ->
   exists f', exists m2', exists b2,
   alloc m2 lo2 hi2 = (m2', b2)
   /\ inject f' m1' m2'
@@ -3911,6 +3914,7 @@ Proof.
   eapply perm_alloc_2; eauto. omega.
   red; intros. apply Zdivide_0.
   intros. apply (valid_not_valid_diff m2 b2 b2); eauto with mem.
+  eauto with zarith.
   intros [f' [A [B [C D]]]].
   exists f'; exists m2'; exists b2; auto.
 Qed.
@@ -4270,6 +4274,7 @@ Qed.
 Theorem alloc_inject_neutral:
   forall thr m lo hi b m',
   alloc m lo hi = (m', b) ->
+  hi <= Ptrofs.modulus ->
   inject_neutral thr m ->
   Plt (nextblock m) thr ->
   inject_neutral thr m'.
