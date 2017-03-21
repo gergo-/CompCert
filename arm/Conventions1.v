@@ -321,7 +321,7 @@ Definition loc_argument_acceptable (l: loc) : Prop :=
 Definition loc_argument_charact (ofs: Z) (l: loc) : Prop :=
   match l with
   | R r => is_callee_save r = false
-  | S Outgoing ofs' ty => ofs' >= ofs /\ typealign ty = 1
+  | S Outgoing ofs' ty => ofs' >= ofs /\ (typealign ty | ofs')
   | _ => False
   end.
 
@@ -358,13 +358,13 @@ Proof.
   destruct (zlt ir 4); destruct H.
   subst. apply ireg_param_caller_save.
   eapply IHtyl; eauto.
-  subst. split; [omega | auto].
+  subst. split; [omega | auto using Z.divide_1_l].
   eapply Y; eauto. omega.
 - (* float *)
   destruct (zlt fr 8); destruct H.
   subst. apply freg_param_caller_save.
   eapply IHtyl; eauto.
-  subst. split. apply Zle_ge. apply align_le. omega. auto.
+  subst. split. apply Zle_ge. apply align_le. omega. auto using align_divides with zarith.
   eapply Y; eauto. apply Zle_trans with (align ofs 2). apply align_le; omega. omega.
 - (* long *)
   set (ir' := align ir 2) in *.
@@ -372,25 +372,25 @@ Proof.
   destruct (zlt ir' 4).
   destruct H. subst p. split; apply ireg_param_caller_save.
   eapply IHtyl; eauto.
-  destruct H. subst p. split; destruct Archi.big_endian; (split; [ omega | auto ]).
+  destruct H. subst p. split; destruct Archi.big_endian; (split; [ omega | auto using Z.divide_1_l ]).
   eapply Y. eapply IHtyl; eauto. omega.
 - (* single *)
   destruct (zlt fr 8); destruct H.
   subst. apply freg_param_caller_save.
   eapply IHtyl; eauto.
-  subst. split; [omega|auto].
+  subst. split; [omega|auto using Z.divide_1_l].
   eapply Y; eauto. omega.
 - (* any32 *)
   destruct (zlt ir 4); destruct H.
   subst. apply ireg_param_caller_save.
   eapply IHtyl; eauto.
-  subst. split; [omega | auto].
+  subst. split; [omega | auto using Z.divide_1_l].
   eapply Y; eauto. omega.
 - (* any64 *)
   destruct (zlt fr 8); destruct H.
   subst. apply freg_param_caller_save.
   eapply IHtyl; eauto.
-  subst. split. apply Zle_ge. apply align_le. omega. auto.
+  subst. split. apply Zle_ge. apply align_le. omega. auto using align_divides with zarith.
   eapply Y; eauto. apply Zle_trans with (align ofs 2). apply align_le; omega. omega.
 Qed.
 
@@ -409,7 +409,7 @@ Proof.
   destruct H.
   destruct (zlt ofs 0); subst p.
   apply ireg_param_caller_save.
-  split; [xomega|auto].
+  split; [xomega|auto using Z.divide_1_l].
   eapply Y; eauto. omega.
 - (* float *)
   set (ofs' := align ofs 2) in *.
@@ -417,7 +417,7 @@ Proof.
   destruct H.
   destruct (zlt ofs' 0); subst p.
   apply freg_param_caller_save.
-  split; [xomega|auto].
+  split; try apply align_divides; [xomega|auto with zarith].
   eapply Y. eapply IHtyl; eauto. omega.
 - (* long *)
   set (ofs' := align ofs 2) in *.
@@ -425,19 +425,19 @@ Proof.
   destruct H.
   destruct (zlt ofs' 0); subst p.
   split; apply ireg_param_caller_save.
-  split; destruct Archi.big_endian; (split; [xomega|auto]).
+  split; destruct Archi.big_endian; (split; [xomega|auto using Z.divide_1_l]).
   eapply Y. eapply IHtyl; eauto. omega.
 - (* single *)
   destruct H.
   destruct (zlt ofs 0); subst p.
   apply freg_param_caller_save.
-  split; [xomega|auto].
+  split; [xomega|auto using Z.divide_1_l].
   eapply Y; eauto. omega.
 - (* any32 *)
   destruct H.
   destruct (zlt ofs 0); subst p.
   apply ireg_param_caller_save.
-  split; [xomega|auto].
+  split; [xomega|auto using Z.divide_1_l].
   eapply Y; eauto. omega.
 - (* any64 *)
   set (ofs' := align ofs 2) in *.
@@ -445,7 +445,7 @@ Proof.
   destruct H.
   destruct (zlt ofs' 0); subst p.
   apply freg_param_caller_save.
-  split; [xomega|auto].
+  split; try apply align_divides; [xomega|auto with zarith].
   eapply Y. eapply IHtyl; eauto. omega.
 Qed.
 
@@ -456,7 +456,7 @@ Proof.
   unfold loc_arguments; intros.
   assert (X: forall l, loc_argument_charact 0 l -> loc_argument_acceptable l).
   { unfold loc_argument_charact, loc_argument_acceptable.
-    destruct l as [r | [] ofs ty]; auto. intros (A & B); split; auto. rewrite B; apply Z.divide_1_l. }
+    destruct l as [r | [] ofs ty]; auto. }
   assert (Y: forall p, forall_rpair (loc_argument_charact 0) p -> forall_rpair loc_argument_acceptable p).
   { destruct p0; simpl; intuition auto. }
   assert (In p (loc_arguments_sf (sig_args s) (-4)) -> forall_rpair loc_argument_acceptable p).

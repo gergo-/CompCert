@@ -212,6 +212,13 @@ Fixpoint loc_arguments_64
       end
   end.
 
+Lemma ptr64_align_float_64:
+  if Archi.ptr64 then Archi.align_float64 = 8 else Archi.align_float64 = 4.
+Proof.
+  caseEq Archi.ptr64; unfold Archi.align_float64; auto.
+  intro. inversion H.
+Qed.
+
 (** [loc_arguments s] returns the list of locations where to store arguments
   when calling a function with signature [s].  *)
 
@@ -275,15 +282,17 @@ Definition loc_argument_64_charact (ofs: Z) (l: loc) : Prop :=
 
 Remark loc_arguments_32_charact:
   forall tyl ofs p,
+  Archi.align_float64 = 4 ->
   In p (loc_arguments_32 tyl ofs) -> forall_rpair (loc_argument_32_charact ofs) p.
 Proof.
   assert (X: forall ofs1 ofs2 l, loc_argument_32_charact ofs2 l -> ofs1 <= ofs2 -> loc_argument_32_charact ofs1 l).
   { destruct l; simpl; intros; auto. destruct sl; auto. intuition omega. }
-  induction tyl as [ | ty tyl]; simpl loc_arguments_32; intros.
+  induction tyl as [ | ty tyl]; simpl loc_arguments_32; intros until p.
 - contradiction.
-- destruct H.
-+ destruct ty; subst p; simpl; omega.
-+ apply IHtyl in H. generalize (typesize_pos ty); intros. destruct p; simpl in *.
+- intros Align H. destruct H.
++ destruct ty; subst p; simpl; unfold Archi.align_float64 in *;
+    try auto with zarith; try byContradiction; try omega.
++ apply IHtyl in H; try auto. generalize (typesize_pos ty); intros. destruct p; simpl in *.
 * eapply X; eauto; omega.
 * destruct H; split; eapply X; eauto; omega.
 Qed.
@@ -343,8 +352,9 @@ Proof.
   exploit loc_arguments_64_charact; eauto using Zdivide_0. 
   unfold forall_rpair; destruct p; intuition auto.
 - (* 32 bits *)
+  generalize ptr64_align_float_64. intro. rewrite SF in H0.
   assert (X: forall l, loc_argument_32_charact 0 l -> loc_argument_acceptable l).
-  { destruct l as [r | [] ofs ty]; simpl; intuition auto. rewrite H2; apply Z.divide_1_l. }
+  { destruct l as [r | [] ofs ty]; simpl; intuition auto. rewrite H3; apply Z.divide_1_l. }
   exploit loc_arguments_32_charact; eauto. 
   unfold forall_rpair; destruct p; intuition auto.
 Qed.

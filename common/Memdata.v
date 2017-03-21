@@ -92,15 +92,15 @@ Definition align_chunk (chunk: memory_chunk) : Z :=
   | Mint32 => 4
   | Mint64 => 8
   | Mfloat32 => 4
-  | Mfloat64 => 4
+  | Mfloat64 => Archi.align_float64
   | Many32 => 4
-  | Many64 => 4
+  | Many64 => Archi.align_float64
   end.
 
 Lemma align_chunk_pos:
   forall chunk, align_chunk chunk > 0.
 Proof.
-  intro. destruct chunk; simpl; omega.
+  intro. destruct chunk; simpl; unfold Archi.align_float64; omega.
 Qed.
 
 Lemma align_chunk_Mptr: align_chunk Mptr = if Archi.ptr64 then 8 else 4.
@@ -118,7 +118,7 @@ Lemma align_le_divides:
   forall chunk1 chunk2,
   align_chunk chunk1 <= align_chunk chunk2 -> (align_chunk chunk1 | align_chunk chunk2).
 Proof.
-  intros. destruct chunk1; destruct chunk2; simpl in *;
+  intros. destruct chunk1; destruct chunk2; simpl in *; unfold Archi.align_float64 in *;
   solve [ omegaContradiction
         | apply Zdivide_refl
         | exists 2; reflexivity

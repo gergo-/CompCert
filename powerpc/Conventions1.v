@@ -269,7 +269,7 @@ Opaque list_nth_z.
   destruct (list_nth_z float_param_regs fr) as [r|] eqn:E; destruct H.
   subst. right. eapply list_nth_z_in; eauto.
   eapply IHtyl; eauto.
-  subst. split. omega. apply Z.divide_1_l.
+  subst. split. omega. auto using align_divides with zarith.
   eapply Y; eauto. omega.
 - (* long *)
   assert (ofs <= align ofs 2) by (apply align_le; omega).
@@ -302,7 +302,7 @@ Opaque list_nth_z.
   destruct (list_nth_z float_param_regs fr) as [r|] eqn:E; destruct H.
   subst. right. eapply list_nth_z_in; eauto.
   eapply IHtyl; eauto.
-  subst. split. omega. apply Z.divide_1_l.
+  subst. split. omega. auto using align_divides with zarith.
   eapply Y; eauto. omega.
 Qed.
 

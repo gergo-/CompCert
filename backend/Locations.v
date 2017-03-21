@@ -88,10 +88,10 @@ Definition typealign (ty: typ) : Z :=
   match ty with
   | Tint => 1
   | Tlong => 2
-  | Tfloat => 1
+  | Tfloat => Archi.align_float64 / 4
   | Tsingle => 1
   | Tany32 => 1
-  | Tany64 => 1
+  | Tany64 => Archi.align_float64 / 4
   end.
 
 Lemma typealign_pos:

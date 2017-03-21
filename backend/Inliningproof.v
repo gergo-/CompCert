@@ -763,11 +763,7 @@ Proof.
     destruct (zle sz 2). omegaContradiction.
     destruct (zle sz 4). omegaContradiction.
     auto.
-  destruct chunk; simpl in *; auto.
-  apply Zone_divide.
-  apply Zone_divide.
-  apply H2; omega.
-  apply H2; omega.
+  destruct chunk; simpl in *; auto; try apply Zone_divide; apply H2; omega.
 Qed.
 
 (** Preservation by external calls *)
