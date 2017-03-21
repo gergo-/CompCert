@@ -1022,6 +1022,43 @@ Proof.
     rewrite L1. change (Z.of_nat 4 * 8) with 32. ring.
 Qed.
 
+Lemma decode_val_float64:
+  forall l1 l2,
+  length l1 = 4%nat -> length l2 = 4%nat ->
+  Val.lessdef
+    (decode_val Mfloat64 (l1 ++ l2))
+    (Val.floatofsingles (decode_val Mfloat32 (if Archi.big_endian then l1 else l2))
+                        (decode_val Mfloat32 (if Archi.big_endian then l2 else l1))).
+Proof.
+  intros. unfold decode_val.
+  rewrite proj_bytes_append.
+  destruct (proj_bytes l1) as [b1|] eqn:B1; destruct (proj_bytes l2) as [b2|] eqn:B2; auto.
+  exploit length_proj_bytes. eexact B1. rewrite H; intro L1.
+  exploit length_proj_bytes. eexact B2. rewrite H0; intro L2.
+  assert (UR: forall l, length l = 4%nat -> Int.unsigned (Int.repr (int_of_bytes l)) = int_of_bytes l).
+  { intros. apply Int.unsigned_repr.
+    generalize (int_of_bytes_range l). rewrite H1.
+    change (two_p (Z.of_nat 4 * 8)) with (Int.max_unsigned + 1).
+    omega. }
+  apply Val.lessdef_same.
+  Local Transparent Float.from_words.
+  unfold decode_int, rev_if_be. destruct Archi.big_endian; rewrite B1; rewrite B2.
+  + rewrite <- (rev_length b1) in L1.
+    rewrite <- (rev_length b2) in L2.
+    rewrite rev_app_distr.
+    set (b1' := rev b1) in *; set (b2' := rev b2) in *.
+    unfold Val.floatofsingles, Float.from_words.
+    rewrite !Float32.to_of_bits.
+    rewrite Int64.ofwords_add. repeat f_equal.
+    rewrite !UR by auto. rewrite int_of_bytes_append.
+    rewrite L2. change (Z.of_nat 4 * 8) with 32. ring.
+  + unfold Val.floatofsingles, Float.from_words.
+    rewrite !Float32.to_of_bits.
+    rewrite Int64.ofwords_add. repeat f_equal.
+    rewrite !UR by auto. rewrite int_of_bytes_append.
+    rewrite L1. change (Z.of_nat 4 * 8) with 32. ring.
+Qed.
+
 Lemma bytes_of_int_append:
   forall n2 x2 n1 x1,
   0 <= x1 < two_p (Z_of_nat n1 * 8) ->
@@ -1071,4 +1108,35 @@ Proof.
   unfold inj_bytes. rewrite <- map_app. f_equal.
   unfold encode_int, rev_if_be. rewrite BI.
   apply bytes_of_int64.
+Qed.
+
+Lemma bytes_of_float64:
+  forall f,
+  bytes_of_int 8 (Int64.unsigned (Float.to_bits f)) =
+  bytes_of_int 4 (Int.unsigned (Float.loword f)) ++ bytes_of_int 4 (Int.unsigned (Float.hiword f)).
+Proof.
+  intros.
+  transitivity (bytes_of_int (4 + 4) (Int64.unsigned (Float.to_bits (Float.from_words (Float.hiword f) (Float.loword f))))).
+  f_equal. f_equal. rewrite Float.from_words_recompose. auto.
+  Local Transparent Float.from_words.
+  unfold Float.from_words. rewrite Float.to_of_bits. rewrite Int64.ofwords_add'.
+  change 32 with (Z_of_nat 4 * 8).
+  rewrite Zplus_comm. apply bytes_of_int_append. apply Int.unsigned_range.
+Qed.
+
+Lemma encode_val_float64:
+  forall v,
+  encode_val Mfloat64 v =
+     encode_val Mfloat32 (if Archi.big_endian then Val.hiwordf v else Val.lowordf v)
+  ++ encode_val Mfloat32 (if Archi.big_endian then Val.lowordf v else Val.hiwordf v).
+Proof.
+  intros. unfold encode_val.
+  destruct v; destruct Archi.big_endian eqn:BI; try reflexivity;
+  unfold Val.lowordf, Val.hiwordf, encode_val.
+  unfold inj_bytes. rewrite <- map_app. f_equal.
+  unfold encode_int, rev_if_be. rewrite BI. rewrite <- rev_app_distr. f_equal.
+  rewrite !Float32.to_of_bits. apply bytes_of_float64.
+  unfold inj_bytes. rewrite <- map_app. f_equal.
+  unfold encode_int, rev_if_be. rewrite BI.
+  rewrite !Float32.to_of_bits. apply bytes_of_float64.
 Qed.

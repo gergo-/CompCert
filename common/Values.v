@@ -475,6 +475,27 @@ Definition floatofwords (v1 v2: val) : val :=
   | _, _ => Vundef
   end.
 
+Definition lowordf (v: val) : val :=
+  match v with
+  | Vfloat n  => Vsingle (Float32.of_bits (Float.loword n))
+  | _ => Vundef
+  end.
+
+Definition hiwordf (v: val) : val :=
+  match v with
+  | Vfloat n  => Vsingle (Float32.of_bits (Float.hiword n))
+  | _ => Vundef
+  end.
+
+Definition floatofsingles (v1 v2: val) : val :=
+  match v1, v2 with
+    | Vsingle f1, Vsingle f2 =>
+      let n1 := Float32.to_bits f1 in
+      let n2 := Float32.to_bits f2 in
+      Vfloat (Float.from_words n1 n2)
+    | _, _ => Vundef
+  end.
+
 Definition addfs (v1 v2: val): val :=
   match v1, v2 with
   | Vsingle f1, Vsingle f2 => Vsingle(Float32.add f1 f2)
@@ -1928,6 +1949,32 @@ Proof.
   intros. inv H; auto.
 Qed.
 
+Lemma floatofwords_lessdef:
+  forall v1 v2 v1' v2',
+  lessdef v1 v1' -> lessdef v2 v2' -> lessdef (floatofwords v1 v2) (floatofwords v1' v2').
+Proof.
+  intros. unfold floatofwords. inv H; auto. inv H0; auto. destruct v1'; auto.
+Qed.
+
+Lemma lowordf_lessdef:
+  forall v v', lessdef v v' -> lessdef (lowordf v) (lowordf v').
+Proof.
+  intros. inv H; auto.
+Qed.
+
+Lemma hiwordf_lessdef:
+  forall v v', lessdef v v' -> lessdef (hiwordf v) (hiwordf v').
+Proof.
+  intros. inv H; auto.
+Qed.
+
+Lemma floatofsingles_lessdef:
+  forall v1 v2 v1' v2',
+  lessdef v1 v1' -> lessdef v2 v2' -> lessdef (floatofsingles v1 v2) (floatofsingles v1' v2').
+Proof.
+  intros. unfold floatofsingles. inv H; auto. inv H0; auto. destruct v1'; auto.
+Qed.
+
 Lemma offset_ptr_zero:
   forall v, lessdef (offset_ptr v Ptrofs.zero) v.
 Proof.
@@ -2222,6 +2269,32 @@ Lemma hiword_inject:
   forall v v', inject f v v' -> inject f (Val.hiword v) (Val.hiword v').
 Proof.
   intros. unfold Val.hiword; inv H; auto.
+Qed.
+
+Lemma floatofwords_inject:
+  forall v1 v2 v1' v2',
+  inject f v1 v1' -> inject f v2 v2' -> inject f (Val.floatofwords v1 v2) (Val.floatofwords v1' v2').
+Proof.
+  intros. unfold Val.floatofwords. inv H; auto. inv H0; auto.
+Qed.
+
+Lemma lowordf_inject:
+  forall v v', inject f v v' -> inject f (Val.lowordf v) (Val.lowordf v').
+Proof.
+  intros. unfold Val.lowordf; inv H; auto.
+Qed.
+
+Lemma hiwordf_inject:
+  forall v v', inject f v v' -> inject f (Val.hiwordf v) (Val.hiwordf v').
+Proof.
+  intros. unfold Val.hiwordf; inv H; auto.
+Qed.
+
+Lemma floatofsingles_inject:
+  forall v1 v2 v1' v2',
+  inject f v1 v1' -> inject f v2 v2' -> inject f (Val.floatofsingles v1 v2) (Val.floatofsingles v1' v2').
+Proof.
+  intros. unfold Val.floatofsingles. inv H; auto. inv H0; auto.
 Qed.
 
 End VAL_INJ_OPS.

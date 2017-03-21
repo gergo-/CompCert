@@ -255,6 +255,10 @@ Definition of_bits (b: int64): float := b64_of_bits (Int64.unsigned b).
 
 Definition from_words (hi lo: int) : float := of_bits (Int64.ofwords hi lo).
 
+Definition loword (f: float): int := Int64.loword (to_bits f).
+
+Definition hiword (f: float): int := Int64.hiword (to_bits f).
+
 (** ** Properties *)
 
 (** Below are the only properties of floating-point arithmetic that we
@@ -380,6 +384,28 @@ Proof.
   intros; unfold of_bits, to_bits, bits_of_b64, b64_of_bits.
   rewrite bits_of_binary_float_of_bits. apply Int64.repr_unsigned.
   apply Int64.unsigned_range.
+Qed.
+
+Theorem from_words_recompose:
+  forall f, from_words (hiword f) (loword f) = f.
+Proof.
+  intros; unfold from_words, hiword, loword.
+  rewrite Int64.ofwords_recompose.
+  apply of_to_bits.
+Qed.
+
+Theorem hi_from_words:
+  forall hi lo, hiword (from_words hi lo) = hi.
+Proof.
+  intros; unfold hiword, from_words.
+  rewrite to_of_bits, Int64.hi_ofwords; trivial.
+Qed.
+
+Theorem lo_from_words:
+  forall hi lo, loword (from_words hi lo) = lo.
+Proof.
+  intros; unfold loword, from_words.
+  rewrite to_of_bits, Int64.lo_ofwords; trivial.
 Qed.
 
 (** Conversions between floats and unsigned ints can be defined
@@ -1270,7 +1296,7 @@ Global Opaque
   Float.of_int Float.of_intu Float.of_long Float.of_longu
   Float.to_int Float.to_intu Float.to_long Float.to_longu
   Float.add Float.sub Float.mul Float.div Float.cmp
-  Float.to_bits Float.of_bits Float.from_words.
+  Float.to_bits Float.of_bits Float.from_words Float.loword Float.hiword.
 
 Global Opaque
   Float32.zero Float32.eq_dec Float32.neg Float32.abs
