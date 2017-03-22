@@ -902,7 +902,7 @@ Proof.
   erewrite loadbytes_length; eauto. reflexivity.
 Qed.
 
-Lemma addressing_int64_split:
+Lemma addressing_any64_split:
   forall i,
   Archi.ptr64 = false ->
   (8 | Ptrofs.unsigned i) ->
@@ -934,8 +934,63 @@ Proof.
   exploit load_int64_split; eauto. intros (v1 & v2 & L1 & L2 & EQ).
   unfold Val.add; rewrite H0.
   assert (NV: Ptrofs.unsigned (Ptrofs.add i (Ptrofs.of_int (Int.repr 4))) = Ptrofs.unsigned i + 4).
-  { apply addressing_int64_split; auto. 
+  { apply addressing_any64_split; auto.
     exploit load_valid_access. eexact H2. intros [P Q]. auto. }
+  exists v1, v2.
+Opaque Ptrofs.repr.
+  split. auto.
+  split. simpl. rewrite NV. auto.
+  auto.
+Qed.
+
+Theorem load_float64_split:
+  forall m b ofs v,
+  load Mfloat64 m b ofs = Some v -> Archi.ptr64 = false ->
+  align_chunk Mfloat64 = 8 ->
+  exists v1 v2,
+     load Mfloat32 m b ofs = Some (if Archi.big_endian then v1 else v2)
+  /\ load Mfloat32 m b (ofs + 4) = Some (if Archi.big_endian then v2 else v1)
+  /\ Val.lessdef v (Val.floatofsingles v1 v2).
+Proof.
+  intros.
+  exploit load_valid_access; eauto. intros [A B]. simpl in *.
+  exploit load_loadbytes. eexact H. simpl. intros [bytes [LB EQ]].
+  change 8 with (4 + 4) in LB.
+  exploit loadbytes_split. eexact LB. omega. omega.
+  intros (bytes1 & bytes2 & LB1 & LB2 & APP).
+  change 4 with (size_chunk Mfloat32) in LB1.
+  assert (align_ofs: (4 | ofs)).
+  { auto; apply Zdivides_trans with 8; solve [exists 2; auto with zarith | auto with zarith]. }
+  exploit loadbytes_load. eexact LB1. auto.
+  intros L1.
+  change 4 with (size_chunk Mfloat32) in LB2.
+  exploit loadbytes_load. eexact LB2.
+  simpl. apply Zdivide_plus_r; auto with zarith; rewrite H1 in B.
+  intros L2.
+  exists (decode_val Mfloat32 (if Archi.big_endian then bytes1 else bytes2));
+  exists (decode_val Mfloat32 (if Archi.big_endian then bytes2 else bytes1)).
+  split. destruct Archi.big_endian; auto.
+  split. destruct Archi.big_endian; auto.
+  rewrite EQ. rewrite APP. apply decode_val_float64; auto.
+  erewrite loadbytes_length; eauto. reflexivity.
+  erewrite loadbytes_length; eauto. reflexivity.
+Qed.
+
+Theorem loadv_float64_split:
+  forall m a v,
+  loadv Mfloat64 m a = Some v -> Archi.ptr64 = false ->
+  align_chunk Mfloat64 = 8 ->
+  exists v1 v2,
+     loadv Mfloat32 m a = Some (if Archi.big_endian then v1 else v2)
+  /\ loadv Mfloat32 m (Val.add a (Vint (Int.repr 4))) = Some (if Archi.big_endian then v2 else v1)
+  /\ Val.lessdef v (Val.floatofsingles v1 v2).
+Proof.
+  intros. destruct a; simpl in H; inv H.
+  exploit load_float64_split; eauto. intros (v1 & v2 & L1 & L2 & EQ).
+  unfold Val.add; rewrite H0.
+  assert (NV: Ptrofs.unsigned (Ptrofs.add i (Ptrofs.of_int (Int.repr 4))) = Ptrofs.unsigned i + 4).
+  { apply addressing_any64_split; auto.
+    exploit load_valid_access. eexact H3. intros [P Q]. rewrite <- H1. exact Q. }
   exists v1, v2.
 Opaque Ptrofs.repr.
   split. auto.
@@ -1661,8 +1716,45 @@ Proof.
   exists m1; split.
   exact A.
   unfold storev, Val.add. rewrite H0.
-  rewrite addressing_int64_split; auto.
+  rewrite addressing_any64_split; auto.
   exploit store_valid_access_3. eexact H2. intros [P Q]. exact Q.
+Qed.
+
+Theorem store_float64_split:
+  forall m b ofs v m',
+  store Mfloat64 m b ofs v = Some m' -> Archi.ptr64 = false ->
+  exists m1,
+     store Mfloat32 m b ofs (if Archi.big_endian then Val.hiwordf v else Val.lowordf v) = Some m1
+  /\ store Mfloat32 m1 b (ofs + 4) (if Archi.big_endian then Val.lowordf v else Val.hiwordf v) = Some m'.
+Proof.
+  intros.
+  exploit store_valid_access_3; eauto. intros [A B]. simpl in *.
+  exploit store_storebytes. eexact H. intros SB.
+  rewrite encode_val_float64 in SB by auto.
+  exploit storebytes_split. eexact SB. intros [m1 [SB1 SB2]].
+  rewrite encode_val_length in SB2. simpl in SB2.
+  assert (align_ofs: (4 | ofs)).
+  { auto; apply Zdivides_trans with 8; solve [exists 2; auto with zarith | auto with zarith]. }
+  exists m1; split.
+  apply storebytes_store. exact SB1. auto.
+  apply storebytes_store. exact SB2. apply Zdivide_plus_r. auto. auto with zarith.
+Qed.
+
+Theorem storev_float64_split:
+  forall m a v m',
+  storev Mfloat64 m a v = Some m' -> Archi.ptr64 = false ->
+  align_chunk Mfloat64 = 8 ->
+  exists m1,
+     storev Mfloat32 m a (if Archi.big_endian then Val.hiwordf v else Val.lowordf v) = Some m1
+  /\ storev Mfloat32 m1 (Val.add a (Vint (Int.repr 4))) (if Archi.big_endian then Val.lowordf v else Val.hiwordf v) = Some m'.
+Proof.
+  intros. destruct a; simpl in H; inv H. rewrite H3.
+  exploit store_float64_split; eauto. intros [m1 [A B]].
+  exists m1; split.
+  exact A.
+  unfold storev, Val.add. rewrite H0.
+  rewrite addressing_any64_split; auto.
+  exploit store_valid_access_3. eexact H3. intros [P Q]. rewrite <- H1. exact Q.
 Qed.
 
 (** ** Properties related to [alloc]. *)
