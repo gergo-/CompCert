@@ -39,38 +39,54 @@ Definition is_callee_save (r: mreg): bool :=
   match r with
   | R0  | R1  | R2  | R3  | R12 => false
   | R4  | R5  | R6  | R7  | R8  | R9  | R10 | R11 => true
-  | F0  | F1  | F2  | F3  | F4  | F5  | F6  | F7 => false
-  | F8  | F9  | F10  | F11 | F12  | F13  | F14  | F15 => true
+  | S0  | S1  | S2  | S3  | S4  | S5  | S6  | S7
+  | S8  | S9  | S10 | S11 | S12 | S13 | S14 | S15 => false
+  | S16 | S17 | S18 | S19 | S20 | S21 | S22 | S23
+  | S24 | S25 | S26 | S27 | S28 | S29 | S30 | S31 => true
+  | D0  | D1  | D2  | D3  | D4  | D5  | D6  | D7  => false
+  | D8  | D9  | D10 | D11 | D12 | D13 | D14 | D15 => true
   end.
 
 Definition int_caller_save_regs :=
   R0 :: R1 :: R2 :: R3 :: R12 :: nil.
 
-Definition single_caller_save_regs := @nil mreg.
+Definition single_caller_save_regs :=
+     S0 :: S1 :: S2  :: S3  :: S4  :: S5  :: S6  :: S7
+  :: S8 :: S9 :: S10 :: S11 :: S12 :: S13 :: S14 :: S15 :: nil.
 
 Definition float_caller_save_regs :=
-  F0 :: F1 :: F2 :: F3 :: F4 :: F5 :: F6 :: F7 :: nil.
+  D0 :: D1 :: D2  :: D3  :: D4  :: D5  :: D6  :: D7 :: nil.
 
 Definition int_callee_save_regs :=
   R4 :: R5 :: R6 :: R7 :: R8 :: R9 :: R10 :: R11 :: nil.
 
-Definition single_callee_save_regs := @nil mreg.
+Definition single_callee_save_regs :=
+     S16 :: S17 :: S18 :: S19 :: S20 :: S21 :: S22 :: S23
+  :: S24 :: S25 :: S26 :: S27 :: S28 :: S29 :: S30 :: S31 :: nil.
 
 Definition float_callee_save_regs :=
-  F8 :: F9 :: F10 :: F11 :: F12 :: F13 :: F14 :: F15 :: nil.
+  D8  :: D9  :: D10 :: D11 :: D12 :: D13 :: D14 :: D15 :: nil.
 
 Definition destroyed_at_call :=
   List.filter (fun r => negb (is_callee_save r)) all_mregs.
 
 Definition dummy_int_reg := R0.     (**r Used in [Coloring]. *)
-Definition dummy_single_reg := F0.  (**r Used in [Coloring]. *)
-Definition dummy_float_reg := F0.   (**r Used in [Coloring]. *)
+Definition dummy_single_reg := S0.  (**r Used in [Coloring]. *)
+Definition dummy_float_reg := D0.   (**r Used in [Coloring]. *)
 
 Definition callee_save_type := mreg_type.
   
 Definition is_single_reg (r: mreg): bool :=
   match r with
-  | _ => false
+  | R0  | R1  | R2  | R3
+  | R4  | R5  | R6  | R7
+  | R8  | R9  | R10 | R11  | R12 => false
+  | S0  | S1  | S2  | S3  | S4  | S5  | S6  | S7
+  | S8  | S9  | S10 | S11 | S12 | S13 | S14 | S15
+  | S16 | S17 | S18 | S19 | S20 | S21 | S22 | S23
+  | S24 | S25 | S26 | S27 | S28 | S29 | S30 | S31 => true
+  | D0  | D1  | D2  | D3  | D4  | D5  | D6  | D7
+  | D8  | D9  | D10 | D11 | D12 | D13 | D14 | D15 => false
   end.
 
 Definition is_float_reg (r: mreg): bool :=
@@ -78,8 +94,12 @@ Definition is_float_reg (r: mreg): bool :=
   | R0  | R1  | R2  | R3
   | R4  | R5  | R6  | R7
   | R8  | R9  | R10 | R11  | R12 => false
-  | F0  | F1  | F2  | F3  | F4  | F5  | F6  | F7
-  | F8  | F9  | F10  | F11 | F12  | F13  | F14  | F15 => true
+  | S0  | S1  | S2  | S3  | S4  | S5  | S6  | S7
+  | S8  | S9  | S10 | S11 | S12 | S13 | S14 | S15
+  | S16 | S17 | S18 | S19 | S20 | S21 | S22 | S23
+  | S24 | S25 | S26 | S27 | S28 | S29 | S30 | S31
+  | D0  | D1  | D2  | D3  | D4  | D5  | D6  | D7
+  | D8  | D9  | D10 | D11 | D12 | D13 | D14 | D15 => true
   end.
 
 (** * Function calling conventions *)
@@ -118,7 +138,8 @@ Definition loc_result (s: signature) : rpair mreg :=
   match s.(sig_res) with
   | None => One R0
   | Some (Tint | Tany32) => One R0
-  | Some (Tfloat | Tsingle | Tany64) => One F0
+  | Some Tsingle => One S0
+  | Some (Tfloat | Tany64) => One D0
   | Some Tlong => if Archi.big_endian
                   then Twolong R0 R1
                   else Twolong R1 R0
@@ -202,13 +223,23 @@ Definition int_param_regs :=
   R0 :: R1 :: R2 :: R3 :: nil.
 
 Definition float_param_regs :=
-  F0 :: F1 :: F2 :: F3 :: F4 :: F5 :: F6 :: F7 :: nil.
+     S0 :: S1 :: S2  :: S3  :: S4  :: S5  :: S6  :: S7
+  :: S8 :: S9 :: S10 :: S11 :: S12 :: S13 :: S14 :: S15 :: nil.
+
+(** We only ever index this list with even indices, so every other element is an
+  irrelevant placeholder. *)
+Definition double_param_regs :=
+     D0 :: D0 :: D1 :: D1 :: D2 :: D2 :: D3 :: D3
+  :: D4 :: D4 :: D5 :: D5 :: D6 :: D6 :: D7 :: D7 :: nil.
 
 Definition ireg_param (n: Z) : mreg :=
   match list_nth_z int_param_regs n with Some r => r | None => R0 end.
 
+Definition sreg_param (n: Z) : mreg :=
+  match list_nth_z float_param_regs n with Some r => r | None => S0 end.
+
 Definition freg_param (n: Z) : mreg :=
-  match list_nth_z float_param_regs n with Some r => r | None => F0 end.
+  match list_nth_z double_param_regs n with Some r => r | None => D0 end.
 
 Fixpoint loc_arguments_hf
      (tyl: list typ) (ir fr ofs: Z) {struct tyl} : list (rpair loc) :=
@@ -219,13 +250,14 @@ Fixpoint loc_arguments_hf
       then One (R (ireg_param ir)) :: loc_arguments_hf tys (ir + 1) fr ofs
       else One (S Outgoing ofs Q32) :: loc_arguments_hf tys ir fr (ofs + 1)
   | (Tfloat | Tany64) as ty :: tys =>
-      if zlt fr 8
-      then One (R (freg_param fr)) :: loc_arguments_hf tys ir (fr + 1) ofs
+      let fr := align fr 2 in
+      if zlt fr 16
+      then One (R (freg_param fr)) :: loc_arguments_hf tys ir (fr + 2) ofs
       else let ofs := align ofs 2 in
            One (S Outgoing ofs Q64) :: loc_arguments_hf tys ir fr (ofs + 2)
   | Tsingle :: tys =>
-      if zlt fr 8
-      then One (R (freg_param fr)) :: loc_arguments_hf tys ir (fr + 1) ofs
+      if zlt fr 16
+      then One (R (sreg_param fr)) :: loc_arguments_hf tys ir (fr + 1) ofs
       else One (S Outgoing ofs Q32) :: loc_arguments_hf tys ir fr (ofs + 1)
   | Tlong :: tys =>
       let ohi := if Archi.big_endian then 0 else 1 in
@@ -269,7 +301,7 @@ Fixpoint loc_arguments_sf
       One (if zlt ofs 0 then R (freg_param (ofs + 4)) else S Outgoing ofs Q64)
       :: loc_arguments_sf tys (ofs + 2)
   | Tsingle :: tys =>
-      One (if zlt ofs 0 then R (freg_param (ofs + 4)) else S Outgoing ofs Q32)
+      One (if zlt ofs 0 then R (sreg_param (ofs + 4)) else S Outgoing ofs Q32)
       :: loc_arguments_sf tys (ofs + 1)
   | Tlong :: tys =>
       let ohi := if Archi.big_endian then 0 else 1 in
@@ -304,11 +336,12 @@ Fixpoint size_arguments_hf (tyl: list typ) (ir fr ofs: Z) {struct tyl} : Z :=
       then size_arguments_hf tys (ir + 1) fr ofs
       else size_arguments_hf tys ir fr (ofs + 1)
   | (Tfloat|Tany64) :: tys =>
-      if zlt fr 8
-      then size_arguments_hf tys ir (fr + 1) ofs
+      let fr := align fr 2 in
+      if zlt fr 16
+      then size_arguments_hf tys ir (fr + 2) ofs
       else size_arguments_hf tys ir fr (align ofs 2 + 2)
   | Tsingle :: tys =>
-      if zlt fr 8
+      if zlt fr 16
       then size_arguments_hf tys ir (fr + 1) ofs
       else size_arguments_hf tys ir fr (ofs + 1)
   | Tlong :: tys =>
@@ -361,11 +394,20 @@ Proof.
   auto.
 Qed.
 
+Remark sreg_param_caller_save: forall n, is_callee_save (sreg_param n) = false.
+Proof.
+  unfold sreg_param; intros.
+  assert (A: forall r, In r float_param_regs -> is_callee_save r = false) by decide_goal.
+  destruct (list_nth_z float_param_regs n) as [r|] eqn:NTH.
+  apply A. eapply list_nth_z_in; eauto.
+  auto.
+Qed.
+
 Remark freg_param_caller_save: forall n, is_callee_save (freg_param n) = false.
 Proof.
   unfold freg_param; intros.
-  assert (A: forall r, In r float_param_regs -> is_callee_save r = false) by decide_goal.
-  destruct (list_nth_z float_param_regs n) as [r|] eqn:NTH.
+  assert (A: forall r, In r double_param_regs -> is_callee_save r = false) by decide_goal.
+  destruct (list_nth_z double_param_regs n) as [r|] eqn:NTH.
   apply A. eapply list_nth_z_in; eauto.
   auto.
 Qed.
@@ -388,7 +430,9 @@ Proof.
   subst. split; [omega | auto].
   eapply Y; eauto. omega.
 - (* float *)
-  destruct (zlt fr 8); destruct H.
+  set (fr' := align fr 2) in *.
+  assert (ofs <= align ofs 2) by (apply align_le; omega).
+  destruct (zlt fr' 16); destruct H.
   subst. apply freg_param_caller_save.
   eapply IHtyl; eauto.
   subst. split. apply Z.le_ge. apply align_le. omega. auto.
@@ -402,8 +446,8 @@ Proof.
   destruct H. subst p. split; destruct Archi.big_endian; (split; [ omega | auto ]).
   eapply Y. eapply IHtyl; eauto. omega.
 - (* single *)
-  destruct (zlt fr 8); destruct H.
-  subst. apply freg_param_caller_save.
+  destruct (zlt fr 16); destruct H.
+  subst. apply sreg_param_caller_save.
   eapply IHtyl; eauto.
   subst. split; [omega|auto].
   eapply Y; eauto. omega.
@@ -414,7 +458,9 @@ Proof.
   subst. split; [omega | auto].
   eapply Y; eauto. omega.
 - (* any64 *)
-  destruct (zlt fr 8); destruct H.
+  set (fr' := align fr 2) in *.
+  assert (ofs <= align ofs 2) by (apply align_le; omega).
+  destruct (zlt fr' 16); destruct H.
   subst. apply freg_param_caller_save.
   eapply IHtyl; eauto.
   subst. split. apply Z.le_ge. apply align_le. omega. auto.
@@ -457,7 +503,7 @@ Proof.
 - (* single *)
   destruct H.
   destruct (zlt ofs 0); subst p.
-  apply freg_param_caller_save.
+  apply sreg_param_caller_save.
   split; [xomega|auto].
   eapply Y; eauto. omega.
 - (* any32 *)
@@ -504,20 +550,22 @@ Proof.
   induction tyl; simpl; intros.
   omega.
   destruct a.
-  destruct (zlt ir 4); eauto. apply Z.le_trans with (ofs0 + 1); auto; omega.
-  destruct (zlt fr 8); eauto.
-  apply Z.le_trans with (align ofs0 2). apply align_le; omega.
-  apply Z.le_trans with (align ofs0 2 + 2); auto; omega.
+  destruct (zlt ir 4); eauto. apply Zle_trans with (ofs0 + 1); auto; omega.
+  set (fr' := align fr 2).
+  destruct (zlt fr' 16); eauto.
+  apply Zle_trans with (align ofs0 2). apply align_le; omega.
+  apply Zle_trans with (align ofs0 2 + 2); auto; omega.
   set (ir' := align ir 2).
   destruct (zlt ir' 4); eauto.
-  apply Z.le_trans with (align ofs0 2). apply align_le; omega.
-  apply Z.le_trans with (align ofs0 2 + 2); auto; omega.
-  destruct (zlt fr 8); eauto.
-  apply Z.le_trans with (ofs0 + 1); eauto. omega.
-  destruct (zlt ir 4); eauto. apply Z.le_trans with (ofs0 + 1); auto; omega.
-  destruct (zlt fr 8); eauto.
-  apply Z.le_trans with (align ofs0 2). apply align_le; omega.
-  apply Z.le_trans with (align ofs0 2 + 2); auto; omega.
+  apply Zle_trans with (align ofs0 2). apply align_le; omega.
+  apply Zle_trans with (align ofs0 2 + 2); auto; omega.
+  destruct (zlt fr 16); eauto.
+  apply Zle_trans with (ofs0 + 1); eauto. omega.
+  destruct (zlt ir 4); eauto. apply Zle_trans with (ofs0 + 1); auto; omega.
+  set (fr' := align fr 2).
+  destruct (zlt fr' 16); eauto.
+  apply Zle_trans with (align ofs0 2). apply align_le; omega.
+  apply Zle_trans with (align ofs0 2 + 2); auto; omega.
 Qed.
 
 Remark size_arguments_sf_above:
@@ -561,7 +609,7 @@ Proof.
   inv H. apply size_arguments_hf_above.
   eauto.
 - (* float *)
-  destruct (zlt fr 8); destruct H.
+  destruct (zlt (align fr 2) 16); destruct H.
   discriminate.
   eauto.
   inv H. apply size_arguments_hf_above.
@@ -580,8 +628,8 @@ Proof.
   destruct H. inv H.
   eapply Z.le_trans. 2: apply size_arguments_hf_above. simpl; omega.
   eauto.
-- (* float *)
-  destruct (zlt fr 8); destruct H.
+- (* single *)
+  destruct (zlt fr 16); destruct H.
   discriminate.
   eauto.
   inv H. apply size_arguments_hf_above.
@@ -593,7 +641,7 @@ Proof.
   inv H. apply size_arguments_hf_above.
   eauto.
 - (* any64 *)
-  destruct (zlt fr 8); destruct H.
+  destruct (zlt (align fr 2) 16); destruct H.
   discriminate.
   eauto.
   inv H. apply size_arguments_hf_above.

@@ -23,8 +23,9 @@ Require Import Memdata.
 (** The following type defines the machine registers that can be referenced
   as locations.  These include:
 - Integer registers that can be allocated to RTL pseudo-registers ([Rxx]).
-- Floating-point registers that can be allocated to RTL pseudo-registers
-  ([Fxx]).
+- Single- and double-precision floating-point registers that can be allocated to
+  RTL pseudo-registers ([Sxx] and [Dx]). We model the subregister relationship
+  between these registers.
 
   The type [mreg] does not include reserved machine registers
   such as the stack pointer, the link register, and the condition codes. *)
@@ -35,11 +36,20 @@ Inductive mreg: Type :=
   | R4: mreg  | R5: mreg  | R6: mreg  | R7: mreg
   | R8: mreg  | R9: mreg  | R10: mreg | R11: mreg
   | R12: mreg
+  (** Allocatable single-precision float regs *)
+  | S0: mreg  | S1: mreg  | S2: mreg  | S3: mreg
+  | S4: mreg  | S5: mreg  | S6: mreg  | S7: mreg
+  | S8: mreg  | S9: mreg  | S10: mreg | S11: mreg
+  | S12: mreg | S13: mreg | S14: mreg | S15: mreg
+  | S16: mreg | S17: mreg | S18: mreg | S19: mreg
+  | S20: mreg | S21: mreg | S22: mreg | S23: mreg
+  | S24: mreg | S25: mreg | S26: mreg | S27: mreg
+  | S28: mreg | S29: mreg | S30: mreg | S31: mreg
   (** Allocatable double-precision float regs *)
-  | F0: mreg  | F1: mreg  | F2: mreg  | F3: mreg
-  | F4: mreg  | F5: mreg  | F6: mreg  | F7: mreg
-  | F8: mreg  | F9: mreg  | F10: mreg | F11: mreg
-  | F12: mreg | F13: mreg | F14: mreg | F15: mreg.
+  | D0: mreg  | D1: mreg  | D2: mreg  | D3: mreg
+  | D4: mreg  | D5: mreg  | D6: mreg  | D7: mreg
+  | D8: mreg  | D9: mreg  | D10: mreg | D11: mreg
+  | D12: mreg | D13: mreg | D14: mreg | D15: mreg.
 
 Lemma mreg_eq: forall (r1 r2: mreg), {r1 = r2} + {r1 <> r2}.
 Proof. decide equality. Defined.
@@ -48,8 +58,12 @@ Global Opaque mreg_eq.
 Definition all_mregs :=
      R0  :: R1  :: R2  :: R3 :: R4  :: R5  :: R6  :: R7
   :: R8  :: R9  :: R10 :: R11 :: R12
-  :: F0  :: F1  :: F2  :: F3  :: F4  :: F5  :: F6  :: F7
-  :: F8  :: F9  :: F10 :: F11 :: F12 :: F13 :: F14 :: F15 :: nil.
+  :: S0  :: S1  :: S2  :: S3  :: S4  :: S5  :: S6  :: S7
+  :: S8  :: S9  :: S10 :: S11 :: S12 :: S13 :: S14 :: S15
+  :: S16 :: S17 :: S18 :: S19 :: S20 :: S21 :: S22 :: S23
+  :: S24 :: S25 :: S26 :: S27 :: S28 :: S29 :: S30 :: S31
+  :: D0  :: D1  :: D2  :: D3  :: D4  :: D5  :: D6  :: D7
+  :: D8  :: D9  :: D10 :: D11 :: D12 :: D13 :: D14 :: D15 :: nil.
 
 Lemma all_mregs_complete:
   forall (r: mreg), In r all_mregs.
@@ -69,17 +83,53 @@ Definition mreg_type (r: mreg): typ :=
   match r with
   | R0  | R1  | R2  | R3   | R4  | R5  | R6  | R7
   | R8  | R9  | R10 | R11  | R12 => Tany32
-  | F0  | F1  | F2  | F3   | F4 | F5   | F6  | F7
-  | F8  | F9  | F10  | F11 | F12  | F13  | F14  | F15 => Tany64
+  | S0  | S1  | S2  | S3  | S4  | S5  | S6  | S7
+  | S8  | S9  | S10 | S11 | S12 | S13 | S14 | S15
+  | S16 | S17 | S18 | S19 | S20 | S21 | S22 | S23
+  | S24 | S25 | S26 | S27 | S28 | S29 | S30 | S31 => Tany32
+  | D0  | D1  | D2  | D3  | D4  | D5  | D6  | D7
+  | D8  | D9  | D10 | D11 | D12 | D13 | D14 | D15 => Tany64
   end.
 
 Definition subregs (r: mreg): list mreg :=
   match r with
+  | D0  => S0 :: S1 :: nil
+  | D1  => S2 :: S3 :: nil
+  | D2  => S4 :: S5 :: nil
+  | D3  => S6 :: S7 :: nil
+  | D4  => S8 :: S9 :: nil
+  | D5  => S10 :: S11 :: nil
+  | D6  => S12 :: S13 :: nil
+  | D7  => S14 :: S15 :: nil
+  | D8  => S16 :: S17 :: nil
+  | D9  => S18 :: S19 :: nil
+  | D10 => S20 :: S21 :: nil
+  | D11 => S22 :: S23 :: nil
+  | D12 => S24 :: S25 :: nil
+  | D13 => S26 :: S27 :: nil
+  | D14 => S28 :: S29 :: nil
+  | D15 => S30 :: S31 :: nil
   | _ => nil
   end.
 
 Definition superregs (r: mreg): list mreg :=
   match r with
+  | S0  | S1  => D0 :: nil
+  | S2  | S3  => D1 :: nil
+  | S4  | S5  => D2 :: nil
+  | S6  | S7  => D3 :: nil
+  | S8  | S9  => D4 :: nil
+  | S10 | S11 => D5 :: nil
+  | S12 | S13 => D6 :: nil
+  | S14 | S15 => D7 :: nil
+  | S16 | S17 => D8 :: nil
+  | S18 | S19 => D9 :: nil
+  | S20 | S21 => D10 :: nil
+  | S22 | S23 => D11 :: nil
+  | S24 | S25 => D12 :: nil
+  | S26 | S27 => D13 :: nil
+  | S28 | S29 => D14 :: nil
+  | S30 | S31 => D15 :: nil
   | _ => nil
   end.
 
@@ -90,7 +140,8 @@ Inductive regclass := RCint | RCsingle | RCfloat | RCany.
 Definition regclass_of_type (t: typ): regclass :=
   match t with
   | Tint | Tlong => RCint
-  | Tsingle | Tfloat => RCfloat
+  | Tsingle => RCsingle
+  | Tfloat => RCfloat
   | Tany32 | Tany64 => RCany
   end.
 
@@ -100,6 +151,7 @@ Definition regclass_of_type (t: typ): regclass :=
 
 Definition regclass_interference (t1 t2: typ): bool :=
   match t1, t2 with
+  | Tsingle, Tfloat | Tfloat, Tsingle => true
   | _, _ => false
   end.
 
@@ -114,10 +166,20 @@ Module IndexedMreg <: INDEXED_TYPE.
     | R4  => 10 | R5 => 12 | R6  => 14 | R7  => 16
     | R8  => 18 | R9 => 20 | R10 => 22 | R11 => 24
     | R12 => 26
-    | F0  => 28 | F1  => 30 | F2  => 32 | F3  => 34
-    | F4  => 36 | F5  => 38 | F6  => 40 | F7  => 42
-    | F8  => 44 | F9  => 46 | F10 => 48 | F11 => 50
-    | F12 => 52 | F13 => 54 | F14 => 56 | F15 => 58
+
+    | D0  => 28 | D1  => 30 | D2  => 32 | D3  => 34
+    | D4  => 36 | D5  => 38 | D6  => 40 | D7  => 42
+    | D8  => 44 | D9  => 46 | D10 => 48 | D11 => 50
+    | D12 => 52 | D13 => 54 | D14 => 56 | D15 => 58
+
+    | S0  =>  60 | S1  =>  62 | S2  =>  64 | S3  =>  66
+    | S4  =>  68 | S5  =>  70 | S6  =>  72 | S7  =>  74
+    | S8  =>  76 | S9  =>  78 | S10 =>  80 | S11 =>  82
+    | S12 =>  84 | S13 =>  86 | S14 =>  88 | S15 =>  90
+    | S16 =>  92 | S17 =>  94 | S18 =>  96 | S19 =>  98
+    | S20 => 100 | S21 => 102 | S22 => 104 | S23 => 106
+    | S24 => 108 | S25 => 110 | S26 => 112 | S27 => 114
+    | S28 => 116 | S29 => 118 | S30 => 120 | S31 => 122
     end.
   Lemma index_inj:
     forall r1 r2, index r1 = index r2 -> r1 = r2.
@@ -156,10 +218,18 @@ Definition register_names :=
   ("R4", R4) ::  ("R5", R5) ::  ("R6", R6) ::  ("R7", R7) ::
   ("R8", R8) ::  ("R9", R9) ::  ("R10", R10) :: ("R11", R11) ::
   ("R12", R12) ::
-  ("F0", F0) ::  ("F1", F1) ::  ("F2", F2) :: ("F3", F3) ::
-  ("F4", F4) ::  ("F5", F5) ::  ("F6", F6) :: ("F7", F7) ::
-  ("F8", F8) ::  ("F9", F9) ::  ("F10", F10) :: ("F11", F11) ::
-  ("F12", F12) ::("F13", F13) ::("F14", F14) :: ("F15", F15) :: nil.
+  ("S0",  S0)  :: ("S1",  S1)  :: ("S2",  S2)  :: ("S3",  S3)  ::
+  ("S4",  S4)  :: ("S5",  S5)  :: ("S6",  S6)  :: ("S7",  S7)  ::
+  ("S8",  S8)  :: ("S9",  S9)  :: ("S10", S10) :: ("S11", S11) ::
+  ("S12", S12) :: ("S13", S13) :: ("S14", S14) :: ("S15", S15) ::
+  ("S16", S16) :: ("S17", S17) :: ("S18", S18) :: ("S19", S19) ::
+  ("S20", S20) :: ("S21", S21) :: ("S22", S22) :: ("S23", S23) ::
+  ("S24", S24) :: ("S25", S25) :: ("S26", S26) :: ("S27", S27) ::
+  ("S28", S28) :: ("S29", S29) :: ("S30", S30) :: ("S31", S31) ::
+  ("D0",  D0)  :: ("D1",  D1)  :: ("D2",  D2)  :: ("D3",  D3)  ::
+  ("D4",  D4)  :: ("D5",  D5)  :: ("D6",  D6)  :: ("D7",  D7)  ::
+  ("D8",  D8)  :: ("D9",  D9)  :: ("D10", D10) :: ("D11", D11) ::
+  ("D12", D12) :: ("D13", D13) :: ("D14", D14) :: ("D15", D15) :: nil.
 
 Definition register_by_name (s: string) : option mreg :=
   let fix assoc (l: list (string * mreg)) : option mreg :=
@@ -174,7 +244,7 @@ Definition register_by_name (s: string) : option mreg :=
 Definition destroyed_by_op (op: operation): list mreg :=
   match op with
   | Odiv | Odivu => R0 :: R1 :: R2 :: R3 :: R12 :: nil
-  | Ointoffloat | Ointuoffloat | Ointofsingle | Ointuofsingle => F6 :: nil
+  | Ointoffloat | Ointuoffloat | Ointofsingle | Ointuofsingle => S12 :: D6 :: nil
   | _ => nil
   end.
 
@@ -201,7 +271,7 @@ Fixpoint destroyed_by_clobber (cl: list string): list mreg :=
 
 Definition destroyed_by_builtin (ef: external_function): list mreg :=
   match ef with
-  | EF_memcpy sz al => R2 :: R3 :: R12 :: F7 :: nil
+  | EF_memcpy sz al => R2 :: R3 :: R12 :: S14 :: S15 :: D7 :: nil
   | EF_inline_asm txt sg clob => destroyed_by_clobber clob
   | _ => nil
   end.

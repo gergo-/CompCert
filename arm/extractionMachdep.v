@@ -14,6 +14,7 @@
 
 (* Suppression of stupidly big equality functions *)
 Extract Constant Asm.ireg_eq => "fun (x: ireg) (y: ireg) -> x = y".
+Extract Constant Asm.sreg_eq => "fun (x: sreg) (y: sreg) -> x = y".
 Extract Constant Asm.freg_eq => "fun (x: freg) (y: freg) -> x = y".
 Extract Constant Asm.preg_eq => "fun (x: preg) (y: preg) -> x = y".
 
