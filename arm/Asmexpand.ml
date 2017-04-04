@@ -118,8 +118,8 @@ let expand_builtin_memcpy_small sz al src dst =
   let (rdst, odst) = memcpy_small_arg sz dst tdst in
   let rec copy osrc odst sz  =
     if sz >= 8 && al >= 4 && !Clflags.option_ffpu then begin
-      emit (Pfldd (FR7,rsrc,osrc));
-      emit (Pfstd (FR7,rdst,odst));
+      emit (Pfldd (DR7,rsrc,osrc));
+      emit (Pfstd (DR7,rdst,odst));
       copy (Int.add osrc _8) (Int.add odst _8) (sz - 8)
     end else if sz >= 4 && al >= 4 then begin
       emit (Pldr (IR14,rsrc,SOimm osrc));
@@ -198,7 +198,7 @@ let expand_builtin_vload_common chunk base ofs res =
 	 emit (Pldr (res1, base, SOimm ofs_hi));
 	 emit (Pldr (res2, base, SOimm ofs_lo))
        end
-  | Mfloat32, BR(FR res) ->
+  | Mfloat32, BR(SR res) ->
      emit (Pflds (res, base, ofs))
   | Mfloat64, BR(FR res) ->
      emit (Pfldd (res, base, ofs))
@@ -242,7 +242,7 @@ let expand_builtin_vstore_common chunk base ofs src =
      let ofs_lo = if Archi.big_endian then Int.add ofs _4 else ofs in
      emit (Pstr (src2, base, SOimm ofs_lo));
      emit (Pstr (src1, base, SOimm ofs_hi))
-  | Mfloat32, BA(FR src) ->
+  | Mfloat32, BA(SR src) ->
      emit (Pfsts (src, base, ofs))
   | Mfloat64, BA(FR src) ->
      emit (Pfstd (src, base, ofs))
@@ -474,10 +474,10 @@ let int_reg_to_dwarf = function
 
 let float_reg_to_dwarf reg =
  let reg =  match reg with
-   | FR0 -> 0  | FR1 -> 1  | FR2 -> 2  | FR3 -> 3
-   | FR4 -> 4  | FR5 -> 5  | FR6 -> 6  | FR7 -> 7
-   | FR8 -> 8  | FR9 -> 9  | FR10 -> 10 | FR11 -> 11
-   | FR12 -> 12 | FR13 -> 13 | FR14 -> 14 | FR15 -> 15 in
+   | DR0  -> 0  | DR1  -> 1  | DR2  -> 2  | DR3 -> 3
+   | DR4  -> 4  | DR5  -> 5  | DR6  -> 6  | DR7 -> 7
+   | DR8  -> 8  | DR9  -> 9  | DR10 -> 10 | DR11 -> 11
+   | DR12 -> 12 | DR13 -> 13 | DR14 -> 14 | DR15 -> 15 in
    if Configuration.model >= "armv7" then
      256 + reg
    else
@@ -485,6 +485,7 @@ let float_reg_to_dwarf reg =
 
 let preg_to_dwarf = function
    | IR r -> int_reg_to_dwarf r
+   | SR _ -> assert false  (* TODO *)
    | FR r -> float_reg_to_dwarf r
    | _ -> assert false
 

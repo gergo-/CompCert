@@ -37,13 +37,26 @@ Inductive ireg: Type :=
   | IR8: ireg  | IR9: ireg  | IR10: ireg | IR11: ireg
   | IR12: ireg | IR13: ireg | IR14: ireg.
 
+Inductive sreg: Type :=
+  | SR0:  sreg | SR1:  sreg | SR2:  sreg | SR3:  sreg
+  | SR4:  sreg | SR5:  sreg | SR6:  sreg | SR7:  sreg
+  | SR8:  sreg | SR9:  sreg | SR10: sreg | SR11: sreg
+  | SR12: sreg | SR13: sreg | SR14: sreg | SR15: sreg
+  | SR16: sreg | SR17: sreg | SR18: sreg | SR19: sreg
+  | SR20: sreg | SR21: sreg | SR22: sreg | SR23: sreg
+  | SR24: sreg | SR25: sreg | SR26: sreg | SR27: sreg
+  | SR28: sreg | SR29: sreg | SR30: sreg | SR31: sreg.
+
 Inductive freg: Type :=
-  | FR0: freg  | FR1: freg  | FR2: freg  | FR3: freg
-  | FR4: freg  | FR5: freg  | FR6: freg  | FR7: freg
-  | FR8: freg  | FR9: freg  | FR10: freg  | FR11: freg
-  | FR12: freg  | FR13: freg  | FR14: freg  | FR15: freg.
+  | DR0:  freg | DR1:  freg | DR2:  freg | DR3:  freg
+  | DR4:  freg | DR5:  freg | DR6:  freg | DR7:  freg
+  | DR8:  freg | DR9:  freg | DR10: freg | DR11: freg
+  | DR12: freg | DR13: freg | DR14: freg | DR15: freg.
 
 Lemma ireg_eq: forall (x y: ireg), {x=y} + {x<>y}.
+Proof. decide equality. Defined.
+
+Lemma sreg_eq: forall (x y: sreg), {x=y} + {x<>y}.
 Proof. decide equality. Defined.
 
 Lemma freg_eq: forall (x y: freg), {x=y} + {x<>y}.
@@ -64,16 +77,18 @@ Proof. decide equality. Defined.
 
 Inductive preg: Type :=
   | IR: ireg -> preg                    (**r integer registers *)
+  | SR: sreg -> preg                    (**r single-precision VFP float registers *)
   | FR: freg -> preg                    (**r double-precision VFP float registers *)
   | CR: crbit -> preg                   (**r bits in the condition register *)
   | PC: preg.                           (**r program counter *)
 
 Coercion IR: ireg >-> preg.
+Coercion SR: sreg >-> preg.
 Coercion FR: freg >-> preg.
 Coercion CR: crbit >-> preg.
 
 Lemma preg_eq: forall (x y: preg), {x=y} + {x<>y}.
-Proof. decide equality. apply ireg_eq. apply freg_eq. apply crbit_eq. Defined.
+Proof. decide equality. apply ireg_eq. apply sreg_eq. apply freg_eq. apply crbit_eq. Defined.
 
 Module PregEq.
   Definition t := preg.
@@ -162,6 +177,7 @@ Inductive instruction : Type :=
   | Pudiv: instruction                             (**r unsigned division *)
   | Pumull: ireg -> ireg -> ireg -> ireg -> instruction (**r unsigned multiply long *)
   (* Floating-point coprocessor instructions (VFP double scalar operations) *)
+  | Pfcpys: sreg -> sreg -> instruction             (**r single move *)
   | Pfcpyd: freg -> freg -> instruction             (**r float move *)
   | Pfabsd: freg -> freg -> instruction             (**r float absolute value *)
   | Pfnegd: freg -> freg -> instruction             (**r float opposite *)
@@ -176,27 +192,27 @@ Inductive instruction : Type :=
   | Pfuitod: freg -> ireg -> instruction            (**r unsigned int to float *)
   | Pftosizd: ireg -> freg -> instruction           (**r float to signed int *)
   | Pftouizd: ireg -> freg -> instruction           (**r float to unsigned int *)
-  | Pfabss: freg -> freg -> instruction             (**r float absolute value *)
-  | Pfnegs: freg -> freg -> instruction             (**r float opposite *)
-  | Pfadds: freg -> freg -> freg -> instruction     (**r float addition *)
-  | Pfdivs: freg -> freg -> freg -> instruction     (**r float division *)
-  | Pfmuls: freg -> freg -> freg -> instruction     (**r float multiplication *)
-  | Pfsubs: freg -> freg -> freg -> instruction     (**r float subtraction *)
-  | Pflis: freg -> float32 -> instruction           (**r load float constant *)
-  | Pfcmps: freg -> freg -> instruction             (**r float comparison *)
-  | Pfcmpzs: freg -> instruction                    (**r float comparison with 0.0 *)
-  | Pfsitos: freg -> ireg -> instruction            (**r signed int to float *)
-  | Pfuitos: freg -> ireg -> instruction            (**r unsigned int to float *)
-  | Pftosizs: ireg -> freg -> instruction           (**r float to signed int *)
-  | Pftouizs: ireg -> freg -> instruction           (**r float to unsigned int *)
-  | Pfcvtsd: freg -> freg -> instruction            (**r round to single precision *)
-  | Pfcvtds: freg -> freg -> instruction            (**r expand to double precision *)
+  | Pfabss: sreg -> sreg -> instruction             (**r float absolute value *)
+  | Pfnegs: sreg -> sreg -> instruction             (**r float opposite *)
+  | Pfadds: sreg -> sreg -> sreg -> instruction     (**r float addition *)
+  | Pfdivs: sreg -> sreg -> sreg -> instruction     (**r float division *)
+  | Pfmuls: sreg -> sreg -> sreg -> instruction     (**r float multiplication *)
+  | Pfsubs: sreg -> sreg -> sreg -> instruction     (**r float subtraction *)
+  | Pflis: sreg -> float32 -> instruction           (**r load float constant *)
+  | Pfcmps: sreg -> sreg -> instruction             (**r float comparison *)
+  | Pfcmpzs: sreg -> instruction                    (**r float comparison with 0.0 *)
+  | Pfsitos: sreg -> ireg -> instruction            (**r signed int to float *)
+  | Pfuitos: sreg -> ireg -> instruction            (**r unsigned int to float *)
+  | Pftosizs: ireg -> sreg -> instruction           (**r float to signed int *)
+  | Pftouizs: ireg -> sreg -> instruction           (**r float to unsigned int *)
+  | Pfcvtsd: sreg -> freg -> instruction            (**r round to single precision *)
+  | Pfcvtds: freg -> sreg -> instruction            (**r expand to double precision *)
   | Pfldd: freg -> ireg -> int -> instruction       (**r float64 load *)
   | Pfldd_a: freg -> ireg -> int -> instruction     (**r any64 load to FP reg *)
-  | Pflds: freg -> ireg -> int -> instruction       (**r float32 load *)
+  | Pflds: sreg -> ireg -> int -> instruction       (**r float32 load *)
   | Pfstd: freg -> ireg -> int -> instruction       (**r float64 store *)
   | Pfstd_a: freg -> ireg -> int -> instruction     (**r any64 store from FP reg *)
-  | Pfsts: freg -> ireg -> int -> instruction       (**r float32 store *)
+  | Pfsts: sreg -> ireg -> int -> instruction       (**r float32 store *)
 
   (* Pseudo-instructions *)
   | Pallocframe: Z -> ptrofs -> instruction         (**r allocate new stack frame *)
@@ -646,6 +662,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr (rs#rdl <- (Val.mul rs#r1 rs#r2)
                          #rdh <- (Val.mulhu rs#r1 rs#r2))) m
   (* Floating-point coprocessor instructions *)
+  | Pfcpys r1 r2 =>
+      Next (nextinstr (rs#r1 <- (rs#r2))) m
   | Pfcpyd r1 r2 =>
       Next (nextinstr (rs#r1 <- (rs#r2))) m
   | Pfabsd r1 r2 =>
@@ -671,9 +689,11 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pfuitod r1 r2 =>
       Next (nextinstr (rs#r1 <- (Val.maketotal (Val.floatofintu rs#r2)))) m
   | Pftosizd r1 r2 =>
-      Next (nextinstr (rs #FR6 <- Vundef #r1 <- (Val.maketotal (Val.intoffloat rs#r2)))) m
+      Next (nextinstr (rs #DR6 <- Vundef #SR12 <- Vundef
+                          #r1 <- (Val.maketotal (Val.intoffloat rs#r2)))) m
   | Pftouizd r1 r2 =>
-      Next (nextinstr (rs #FR6 <- Vundef #r1 <- (Val.maketotal (Val.intuoffloat rs#r2)))) m
+      Next (nextinstr (rs #DR6 <- Vundef #SR12 <- Vundef
+                          #r1 <- (Val.maketotal (Val.intuoffloat rs#r2)))) m
   | Pfabss r1 r2 =>
       Next (nextinstr (rs#r1 <- (Val.absfs rs#r2))) m
   | Pfnegs r1 r2 =>
@@ -697,9 +717,11 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pfuitos r1 r2 =>
       Next (nextinstr (rs#r1 <- (Val.maketotal (Val.singleofintu rs#r2)))) m
   | Pftosizs r1 r2 =>
-      Next (nextinstr (rs #FR6 <- Vundef #r1 <- (Val.maketotal (Val.intofsingle rs#r2)))) m
+      Next (nextinstr (rs #DR6 <- Vundef #SR12 <- Vundef
+                          #r1 <- (Val.maketotal (Val.intofsingle rs#r2)))) m
   | Pftouizs r1 r2 =>
-      Next (nextinstr (rs #FR6 <- Vundef #r1 <- (Val.maketotal (Val.intuofsingle rs#r2)))) m
+      Next (nextinstr (rs #DR6 <- Vundef #SR12 <- Vundef
+                          #r1 <- (Val.maketotal (Val.intuofsingle rs#r2)))) m
   | Pfcvtsd r1 r2 =>
       Next (nextinstr (rs#r1 <- (Val.singleoffloat rs#r2))) m
   | Pfcvtds r1 r2 =>
@@ -799,10 +821,18 @@ Definition preg_of (r: mreg) : preg :=
   | R4 => IR4 | R5 => IR5 | R6 => IR6 | R7 => IR7
   | R8 => IR8 | R9 => IR9 | R10 => IR10 | R11 => IR11
   | R12 => IR12
-  | F0 => FR0 | F1 => FR1 | F2 => FR2 | F3 => FR3
-  | F4 => FR4 | F5 => FR5 | F6 => FR6 | F7 => FR7
-  | F8 => FR8 | F9 => FR9 | F10 => FR10 | F11 => FR11
-  | F12 => FR12 | F13 => FR13 | F14 => FR14 | F15 => FR15
+  | S0  => SR0  | S1  => SR1  | S2  => SR2  | S3  => SR3
+  | S4  => SR4  | S5  => SR5  | S6  => SR6  | S7  => SR7
+  | S8  => SR8  | S9  => SR9  | S10 => SR10 | S11 => SR11
+  | S12 => SR12 | S13 => SR13 | S14 => SR14 | S15 => SR15
+  | S16 => SR16 | S17 => SR17 | S18 => SR18 | S19 => SR19
+  | S20 => SR20 | S21 => SR21 | S22 => SR22 | S23 => SR23
+  | S24 => SR24 | S25 => SR25 | S26 => SR26 | S27 => SR27
+  | S28 => SR28 | S29 => SR29 | S30 => SR30 | S31 => SR31
+  | D0  => DR0  | D1  => DR1  | D2  => DR2  | D3  => DR3
+  | D4  => DR4  | D5  => DR5  | D6  => DR6  | D7  => DR7
+  | D8  => DR8  | D9  => DR9  | D10 => DR10 | D11 => DR11
+  | D12 => DR12 | D13 => DR13 | D14 => DR14 | D15 => DR15
   end.
 
 (** Extract the values of the arguments of an external call.
@@ -954,6 +984,7 @@ Definition data_preg (r: preg) : bool :=
   match r with
   | IR IR14 => false
   | IR _ => true
+  | SR _ => true
   | FR _ => true
   | CR _ => false
   | PC => false
