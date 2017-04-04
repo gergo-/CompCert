@@ -31,8 +31,19 @@ Local Open Scope error_monad_scope.
 Definition ireg_of (r: mreg) : res ireg :=
   match preg_of r with IR mr => OK mr | _ => Error(msg "Asmgen.ireg_of") end.
 
+Definition sreg_of (r: mreg) : res sreg :=
+  match preg_of r with SR mr => OK mr | _ => Error(msg "Asmgen.sreg_of") end.
+
 Definition freg_of (r: mreg) : res freg :=
   match preg_of r with FR mr => OK mr | _ => Error(msg "Asmgen.freg_of") end.
+
+(* This lemma corresponds to [ireg_of_eq] and [freg_of_eq] in the
+  machine-independent [Asmgenproof0] module. *)
+Lemma sreg_of_eq:
+  forall r r', sreg_of r = OK r' -> preg_of r = SR r'.
+Proof.
+  unfold sreg_of; intros. destruct (preg_of r); inv H; auto.
+Qed.
 
 (** Recognition of integer immediate arguments for arithmetic operations.
 - ARM: immediates are 8-bit quantities zero-extended and rotated right
@@ -263,16 +274,16 @@ Definition transl_cond
       do r1 <- freg_of a1;
       OK (Pfcmpzd r1 :: k)
   | Ccompfs cmp, a1 :: a2 :: nil =>
-      do r1 <- freg_of a1; do r2 <- freg_of a2;
+      do r1 <- sreg_of a1; do r2 <- sreg_of a2;
       OK (Pfcmps r1 r2 :: k)
   | Cnotcompfs cmp, a1 :: a2 :: nil =>
-      do r1 <- freg_of a1; do r2 <- freg_of a2;
+      do r1 <- sreg_of a1; do r2 <- sreg_of a2;
       OK (Pfcmps r1 r2 :: k)
   | Ccompfszero cmp, a1 :: nil =>
-      do r1 <- freg_of a1;
+      do r1 <- sreg_of a1;
       OK (Pfcmpzs r1 :: k)
   | Cnotcompfszero cmp, a1 :: nil =>
-      do r1 <- freg_of a1;
+      do r1 <- sreg_of a1;
       OK (Pfcmpzs r1 :: k)
   | _, _ =>
       Error(msg "Asmgen.transl_cond")
@@ -345,6 +356,7 @@ Definition transl_op
   | Omove, a1 :: nil =>
       match preg_of res, preg_of a1 with
       | IR r, IR a => OK (Pmov r (SOreg a) :: k)
+      | SR r, SR a => OK (Pfcpys r a :: k)
       | FR r, FR a => OK (Pfcpyd r a :: k)
       |  _  ,  _   => Error(msg "Asmgen.Omove")
       end
@@ -355,7 +367,7 @@ Definition transl_op
       do r <- freg_of res;
       OK (Pflid r f :: k)
   | Osingleconst f, nil =>
-      do r <- freg_of res;
+      do r <- sreg_of res;
       OK (Pflis r f :: k)
   | Oaddrsymbol s ofs, nil =>
       do r <- ireg_of res;
@@ -499,28 +511,28 @@ Definition transl_op
       do r <- freg_of res; do r1 <- freg_of a1; do r2 <- freg_of a2;
       OK (Pfdivd r r1 r2 :: k)
   | Onegfs, a1 :: nil =>
-      do r <- freg_of res; do r1 <- freg_of a1;
+      do r <- sreg_of res; do r1 <- sreg_of a1;
       OK (Pfnegs r r1 :: k)
   | Oabsfs, a1 :: nil =>
-      do r <- freg_of res; do r1 <- freg_of a1;
+      do r <- sreg_of res; do r1 <- sreg_of a1;
       OK (Pfabss r r1 :: k)
   | Oaddfs, a1 :: a2 :: nil =>
-      do r <- freg_of res; do r1 <- freg_of a1; do r2 <- freg_of a2;
+      do r <- sreg_of res; do r1 <- sreg_of a1; do r2 <- sreg_of a2;
       OK (Pfadds r r1 r2 :: k)
   | Osubfs, a1 :: a2 :: nil =>
-      do r <- freg_of res; do r1 <- freg_of a1; do r2 <- freg_of a2;
+      do r <- sreg_of res; do r1 <- sreg_of a1; do r2 <- sreg_of a2;
       OK (Pfsubs r r1 r2 :: k)
   | Omulfs, a1 :: a2 :: nil =>
-      do r <- freg_of res; do r1 <- freg_of a1; do r2 <- freg_of a2;
+      do r <- sreg_of res; do r1 <- sreg_of a1; do r2 <- sreg_of a2;
       OK (Pfmuls r r1 r2 :: k)
   | Odivfs, a1 :: a2 :: nil =>
-      do r <- freg_of res; do r1 <- freg_of a1; do r2 <- freg_of a2;
+      do r <- sreg_of res; do r1 <- sreg_of a1; do r2 <- sreg_of a2;
       OK (Pfdivs r r1 r2 :: k)
   | Osingleoffloat, a1 :: nil =>
-      do r <- freg_of res; do r1 <- freg_of a1;
+      do r <- sreg_of res; do r1 <- freg_of a1;
       OK (Pfcvtsd r r1 :: k)
   | Ofloatofsingle, a1 :: nil =>
-      do r <- freg_of res; do r1 <- freg_of a1;
+      do r <- freg_of res; do r1 <- sreg_of a1;
       OK (Pfcvtds r r1 :: k)
   | Ointoffloat, a1 :: nil =>
       do r <- ireg_of res; do r1 <- freg_of a1;
@@ -535,16 +547,16 @@ Definition transl_op
       do r <- freg_of res; do r1 <- ireg_of a1;
       OK (Pfuitod r r1 :: k)
   | Ointofsingle, a1 :: nil =>
-      do r <- ireg_of res; do r1 <- freg_of a1;
+      do r <- ireg_of res; do r1 <- sreg_of a1;
       OK (Pftosizs r r1 :: k)
   | Ointuofsingle, a1 :: nil =>
-      do r <- ireg_of res; do r1 <- freg_of a1;
+      do r <- ireg_of res; do r1 <- sreg_of a1;
       OK (Pftouizs r r1 :: k)
   | Osingleofint, a1 :: nil =>
-      do r <- freg_of res; do r1 <- ireg_of a1;
+      do r <- sreg_of res; do r1 <- ireg_of a1;
       OK (Pfsitos r r1 :: k)
   | Osingleofintu, a1 :: nil =>
-      do r <- freg_of res; do r1 <- ireg_of a1;
+      do r <- sreg_of res; do r1 <- ireg_of a1;
       OK (Pfuitos r r1 :: k)
   | Ocmp cmp, _ =>
       do r <- ireg_of res;
@@ -575,7 +587,7 @@ Definition loadind (base: ireg) (ofs: ptrofs) (ty: typ) (dst: mreg) (k: code) :=
       OK (indexed_memory_access (fun base n => Pldr r base (SOimm n)) mk_immed_mem_word base ofs k)
   | Tany32, IR r =>
       OK (indexed_memory_access (fun base n => Pldr_a r base (SOimm n)) mk_immed_mem_word base ofs k)
-  | Tsingle, FR r =>
+  | Tsingle, SR r =>
       OK (indexed_memory_access (Pflds r) mk_immed_mem_float base ofs k)
   | Tfloat, FR r =>
       OK (indexed_memory_access (Pfldd r) mk_immed_mem_float base ofs k)
@@ -592,7 +604,7 @@ Definition storeind (src: mreg) (base: ireg) (ofs: ptrofs) (ty: typ) (k: code) :
       OK (indexed_memory_access (fun base n => Pstr r base (SOimm n)) mk_immed_mem_word base ofs k)
   | Tany32, IR r =>
       OK (indexed_memory_access (fun base n => Pstr_a r base (SOimm n)) mk_immed_mem_word base ofs k)
-  | Tsingle, FR r =>
+  | Tsingle, SR r =>
       OK (indexed_memory_access (Pfsts r) mk_immed_mem_float base ofs k)
   | Tfloat, FR r =>
       OK (indexed_memory_access (Pfstd r) mk_immed_mem_float base ofs k)
@@ -645,6 +657,16 @@ Definition transl_memory_access_int
     (Some (mk_instr rd))
     mk_immed addr args k.
 
+Definition transl_memory_access_single
+     (mk_instr: sreg -> ireg -> int -> instruction)
+     (mk_immed: int -> int)
+     (dst: mreg) (addr: addressing) (args: list mreg) (k: code) :=
+  do rd <- sreg_of dst;
+  transl_memory_access
+    (mk_instr rd)
+    None
+    mk_immed addr args k.
+
 Definition transl_memory_access_float
      (mk_instr: freg -> ireg -> int -> instruction)
      (mk_immed: int -> int)
@@ -669,7 +691,7 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
   | Mint32 =>
       transl_memory_access_int Pldr mk_immed_mem_word dst addr args k
   | Mfloat32 =>
-      transl_memory_access_float Pflds mk_immed_mem_float dst addr args k
+      transl_memory_access_single Pflds mk_immed_mem_float dst addr args k
   | Mfloat64 =>
       transl_memory_access_float Pfldd mk_immed_mem_float dst addr args k
   | _ =>
@@ -690,7 +712,7 @@ Definition transl_store (chunk: memory_chunk) (addr: addressing)
   | Mint32 =>
       transl_memory_access_int Pstr mk_immed_mem_word src addr args k
   | Mfloat32 =>
-      transl_memory_access_float Pfsts mk_immed_mem_float src addr args k
+      transl_memory_access_single Pfsts mk_immed_mem_float src addr args k
   | Mfloat64 =>
       transl_memory_access_float Pfstd mk_immed_mem_float src addr args k
   | _ =>

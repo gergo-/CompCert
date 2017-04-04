@@ -61,16 +61,20 @@ struct
     | IR12 -> "r12" | IR13 -> "sp" | IR14 -> "lr"
 
   let float_reg_name = function
-    | FR0 -> "d0"  | FR1 -> "d1"  | FR2 -> "d2"  | FR3 -> "d3"
-    | FR4 -> "d4"  | FR5 -> "d5"  | FR6 -> "d6"  | FR7 -> "d7"
-    | FR8 -> "d8"  | FR9 -> "d9"  | FR10 -> "d10"  | FR11 -> "d11"
-    | FR12 -> "d12"  | FR13 -> "d13"  | FR14 -> "d14"  | FR15 -> "d15"
+    | DR0  -> "d0"  | DR1  -> "d1"  | DR2  -> "d2"  | DR3  -> "d3"
+    | DR4  -> "d4"  | DR5  -> "d5"  | DR6  -> "d6"  | DR7  -> "d7"
+    | DR8  -> "d8"  | DR9  -> "d9"  | DR10 -> "d10" | DR11 -> "d11"
+    | DR12 -> "d12" | DR13 -> "d13" | DR14 -> "d14" | DR15 -> "d15"
 
   let single_float_reg_name = function
-    | FR0 -> "s0"  | FR1 -> "s2"  | FR2 -> "s4"  | FR3 -> "s6"
-    | FR4 -> "s8"  | FR5 -> "s10"  | FR6 -> "s12"  | FR7 -> "s14"
-    | FR8 -> "s16"  | FR9 -> "s18"  | FR10 -> "s20"  | FR11 -> "s22"
-    | FR12 -> "s24"  | FR13 -> "s26"  | FR14 -> "s28"  | FR15 -> "s30"
+    | SR0  -> "s0"  | SR1  -> "s1"  | SR2  -> "s2"  | SR3  -> "s3"
+    | SR4  -> "s4"  | SR5  -> "s5"  | SR6  -> "s6"  | SR7  -> "s7"
+    | SR8  -> "s8"  | SR9  -> "s9"  | SR10 -> "s10" | SR11 -> "s11"
+    | SR12 -> "s12" | SR13 -> "s13" | SR14 -> "s14" | SR15 -> "s15"
+    | SR16 -> "s16" | SR17 -> "s17" | SR18 -> "s18" | SR19 -> "s19"
+    | SR20 -> "s20" | SR21 -> "s21" | SR22 -> "s22" | SR23 -> "s23"
+    | SR24 -> "s24" | SR25 -> "s25" | SR26 -> "s26" | SR27 -> "s27"
+    | SR28 -> "s28" | SR29 -> "s29" | SR30 -> "s30" | SR31 -> "s31"
 
   let ireg oc r = output_string oc (int_reg_name r)
   let freg oc r = output_string oc (float_reg_name r)
@@ -78,6 +82,7 @@ struct
 
   let preg oc = function
     | IR r -> ireg oc r
+    | SR r -> freg_single oc r
     | FR r -> freg oc r
     | _    -> assert false
 
@@ -282,8 +287,11 @@ struct
     let ireg_param = function
       | 0 -> IR0 | 1 -> IR1 | 2 -> IR2 | 3 -> IR3 | _ -> assert false
 
+    let sreg_param = function
+      | 0 -> SR0 | 1 -> SR1 | 2 -> SR2 | 3 -> SR3 | _ -> assert false
+
     let freg_param = function
-      | 0 -> FR0 | 1 -> FR1 | 2 -> FR2 | 3 -> FR3 | _ -> assert false
+      | 0 -> DR0 | 1 -> DR1 | 2 -> DR2 | 3 -> DR3 | _ -> assert false
 
     let fixup_double oc dir f i1 i2 =
       match dir with
@@ -312,12 +320,12 @@ struct
             let i = (i + 1) land (-2) in
             if i >= 4 then 0 else begin
               if Archi.big_endian
-              then fixup_double oc dir (freg_param i) (ireg_param (i+1)) (ireg_param i)
-              else fixup_double oc dir (freg_param i) (ireg_param i) (ireg_param (i+1));
+              then fixup_double oc dir (freg_param (i/2)) (ireg_param (i+1)) (ireg_param i)
+              else fixup_double oc dir (freg_param (i/2)) (ireg_param i) (ireg_param (i+1));
               1 + fixup (i+2) tyl'
             end
           | Tsingle :: tyl' ->
-            fixup_single oc dir (freg_param i) (ireg_param i);
+            fixup_single oc dir (sreg_param i) (ireg_param i);
             1 + fixup (i+1) tyl'
       in fixup 0 tyl
 
@@ -331,70 +339,11 @@ struct
 
   module FixupHF = struct
 
-    type fsize = Single | Double
-
-    let rec find_single used pos =
-      if pos >= Array.length used then pos
-      else if used.(pos) then find_single used (pos + 1)
-      else begin used.(pos) <- true; pos end
-
-    let rec find_double used pos =
-      if pos + 1 >= Array.length used then pos
-      else if used.(pos) || used.(pos + 1) then find_double used (pos + 2)
-      else begin used.(pos) <- true; used.(pos + 1) <- true; pos / 2 end
-
-    let rec fixup_actions used fr tyl =
-      match tyl with
-      | [] -> []
-      | (Tint | Tlong | Tany32) :: tyl' -> fixup_actions used fr tyl'
-      | (Tfloat | Tany64) :: tyl' ->
-        if fr >= 8 then [] else begin
-          let dr = find_double used 0 in
-          assert (dr < 8);
-          (fr, Double, dr) :: fixup_actions used (fr + 1) tyl'
-        end
-      | Tsingle :: tyl' ->
-        if fr >= 8 then [] else begin
-          let sr = find_single used 0 in
-          assert (sr < 16);
-          (fr, Single, sr) :: fixup_actions used (fr + 1) tyl'
-        end
-
-    let rec fixup_outgoing oc = function
-      | [] -> 0
-      | (fr, Double, dr) :: act ->
-        if fr = dr then fixup_outgoing oc act else begin
-          fprintf oc "	vmov.f64 d%d, d%d\n" dr fr;
-          1 + fixup_outgoing oc act
-        end
-      | (fr, Single, sr) :: act ->
-        fprintf oc "	vmov.f32 s%d, s%d\n" sr (2*fr);
-        1 + fixup_outgoing oc act
-
-    let rec fixup_incoming oc = function
-      | [] -> 0
-      | (fr, Double, dr) :: act ->
-        let n = fixup_incoming oc act in
-        if fr = dr then n else begin
-          fprintf oc "	vmov.f64 d%d, d%d\n" fr dr;
-          1 + n
-        end
-      | (fr, Single, sr) :: act ->
-        let n = fixup_incoming oc act in
-        if (2*fr) = sr then n else begin
-          fprintf oc "	vmov.f32 s%d, s%d\n" (2*fr) sr;
-          1 + n
-        end
-
     let fixup_arguments oc dir sg =
       if sg.sig_cc.cc_vararg then
         FixupEABI.fixup_arguments oc dir sg
-      else begin
-        let act = fixup_actions (Array.make 16 false) 0 sg.sig_args in
-        match dir with
-        | Outgoing -> fixup_outgoing oc act
-        | Incoming -> fixup_incoming oc act
-      end
+      else
+        0
 
     let fixup_result oc dir sg =
       if sg.sig_cc.cc_vararg then
@@ -407,6 +356,26 @@ struct
     match Opt.float_abi with
     | Soft -> (FixupEABI.fixup_arguments, FixupEABI.fixup_result)
     | Hard -> (FixupHF.fixup_arguments, FixupHF.fixup_result)
+
+  (* Choosing one half of a double-precision register, needed for the
+     expansion of int-to-double instructions. *)
+  let freg_half = function
+    | DR0  -> SR0
+    | DR1  -> SR2
+    | DR2  -> SR4
+    | DR3  -> SR6
+    | DR4  -> SR8
+    | DR5  -> SR10
+    | DR6  -> SR12
+    | DR7  -> SR14
+    | DR8  -> SR16
+    | DR9  -> SR18
+    | DR10 -> SR20
+    | DR11 -> SR22
+    | DR12 -> SR24
+    | DR13 -> SR26
+    | DR14 -> SR28
+    | DR15 -> SR30
 
   (* Printing of instructions *)
 
@@ -580,6 +549,8 @@ struct
     | Pumull(r1, r2, r3, r4) ->
       fprintf oc "	umull	%a, %a, %a, %a\n" ireg r1 ireg r2 ireg r3 ireg r4; 1
     (* Floating-point VFD instructions *)
+    | Pfcpys(r1, r2) ->
+      fprintf oc "	vmov.f32 %a, %a\n" freg_single r1 freg_single r2; 1
     | Pfcpyd(r1, r2) ->
       fprintf oc "	vmov.f64 %a, %a\n" freg r1 freg r2; 1
     | Pfabsd(r1, r2) ->
@@ -619,17 +590,19 @@ struct
       fprintf oc "	vcmp.f64 %a, #0\n" freg r1;
       fprintf oc "	vmrs APSR_nzcv, FPSCR\n"; 2
     | Pfsitod(r1, r2) ->
-      fprintf oc "	vmov	%a, %a\n" freg_single r1 ireg r2;
-      fprintf oc "	vcvt.f64.s32 %a, %a\n" freg r1 freg_single r1; 2
+      let r1s = freg_half r1 in
+      fprintf oc "	vmov	%a, %a\n" freg_single r1s ireg r2;
+      fprintf oc "	vcvt.f64.s32 %a, %a\n" freg r1 freg_single r1s; 2
     | Pfuitod(r1, r2) ->
-      fprintf oc "	vmov	%a, %a\n" freg_single r1 ireg r2;
-      fprintf oc "	vcvt.f64.u32 %a, %a\n" freg r1 freg_single r1; 2
+      let r1s = freg_half r1 in
+      fprintf oc "	vmov	%a, %a\n" freg_single r1s ireg r2;
+      fprintf oc "	vcvt.f64.u32 %a, %a\n" freg r1 freg_single r1s; 2
     | Pftosizd(r1, r2) ->
-      fprintf oc "	vcvt.s32.f64 %a, %a\n" freg_single FR6 freg r2;
-      fprintf oc "	vmov	%a, %a\n" ireg r1 freg_single FR6; 2
+      fprintf oc "	vcvt.s32.f64 %a, %a\n" freg_single SR12 freg r2;
+      fprintf oc "	vmov	%a, %a\n" ireg r1 freg_single SR12; 2
     | Pftouizd(r1, r2) ->
-      fprintf oc "	vcvt.u32.f64 %a, %a\n" freg_single FR6 freg r2;
-      fprintf oc "	vmov	%a, %a\n" ireg r1 freg_single FR6; 2
+      fprintf oc "	vcvt.u32.f64 %a, %a\n" freg_single SR12 freg r2;
+      fprintf oc "	vmov	%a, %a\n" ireg r1 freg_single SR12; 2
     | Pfabss(r1, r2) ->
       fprintf oc "	vabs.f32 %a, %a\n" freg_single r1 freg_single r2; 1
     | Pfnegs(r1, r2) ->
@@ -676,11 +649,11 @@ struct
       fprintf oc "	vmov	%a, %a\n" freg_single r1 ireg r2;
       fprintf oc "	vcvt.f32.u32 %a, %a\n" freg_single r1 freg_single r1; 2
     | Pftosizs(r1, r2) ->
-      fprintf oc "	vcvt.s32.f32 %a, %a\n" freg_single FR6 freg_single r2;
-      fprintf oc "	vmov	%a, %a\n" ireg r1 freg_single FR6; 2
+      fprintf oc "	vcvt.s32.f32 %a, %a\n" freg_single SR12 freg_single r2;
+      fprintf oc "	vmov	%a, %a\n" ireg r1 freg_single SR12; 2
     | Pftouizs(r1, r2) ->
-      fprintf oc "	vcvt.u32.f32 %a, %a\n" freg_single FR6 freg_single r2;
-      fprintf oc "	vmov	%a, %a\n" ireg r1 freg_single FR6; 2
+      fprintf oc "	vcvt.u32.f32 %a, %a\n" freg_single SR12 freg_single r2;
+      fprintf oc "	vmov	%a, %a\n" ireg r1 freg_single SR12; 2
     | Pfcvtsd(r1, r2) ->
       fprintf oc "	vcvt.f32.f64 %a, %a\n" freg_single r1 freg r2; 1
     | Pfcvtds(r1, r2) ->

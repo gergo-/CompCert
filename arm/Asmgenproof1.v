@@ -59,6 +59,7 @@ Qed.
 Definition if_preg (r: preg) : bool :=
   match r with
   | IR _ => true
+  | SR _ => true
   | FR _ => true
   | CR _ => false
   | PC   => false
@@ -988,6 +989,7 @@ Ltac ArgsInv :=
   subst;
   repeat (match goal with
   | [ H: ireg_of ?x = OK ?y |- _ ] => simpl in *; rewrite (ireg_of_eq _ _ H) in *
+  | [ H: sreg_of ?x = OK ?y |- _ ] => simpl in *; rewrite (sreg_of_eq _ _ H) in *
   | [ H: freg_of ?x = OK ?y |- _ ] => simpl in *; rewrite (freg_of_eq _ _ H) in *
   end).
 
@@ -1154,6 +1156,7 @@ Proof.
   (* Omove *)
   destruct (preg_of res) eqn:RES; try discriminate;
   destruct (preg_of m0) eqn:ARG; inv TR.
+  econstructor; split. apply exec_straight_one; simpl; eauto. intuition Simpl.
   econstructor; split. apply exec_straight_one; simpl; eauto. intuition Simpl.
   econstructor; split. apply exec_straight_one; simpl; eauto. intuition Simpl.
   (* Ointconst *)
@@ -1400,6 +1403,28 @@ Proof.
   split. Simpl. intros; Simpl.
 Qed.
 
+Lemma transl_load_single_correct:
+  forall mk_instr is_immed dst addr args k c (rs: regset) a chunk m v,
+  transl_memory_access_single mk_instr is_immed dst addr args k = OK c ->
+  eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some a ->
+  Mem.loadv chunk m a = Some v ->
+  (forall (r1: sreg) (r2: ireg) (n: int) (rs1: regset),
+    exec_instr ge fn (mk_instr r1 r2 n) rs1 m =
+    exec_load chunk (Val.add rs1#r2 (Vint n)) r1 rs1 m) ->
+  exists rs',
+      exec_straight ge fn c rs m k rs' m
+   /\ rs'#(preg_of dst) = v
+   /\ forall r, data_preg r = true -> r <> preg_of dst -> rs'#r = rs#r.
+Proof.
+  intros. monadInv H. erewrite sreg_of_eq by eauto.
+  eapply transl_memory_access_correct; eauto.
+  destruct a; discriminate || trivial.
+  intros; simpl. econstructor; split. apply exec_straight_one.
+  rewrite H2. unfold exec_load. rewrite H. rewrite H1. eauto. auto.
+  split. Simpl. intros; Simpl.
+  simpl; auto.
+Qed.
+
 Lemma transl_load_float_correct:
   forall mk_instr is_immed dst addr args k c (rs: regset) a chunk m v,
   transl_memory_access_float mk_instr is_immed dst addr args k = OK c ->
@@ -1448,6 +1473,28 @@ Proof.
   intros; Simpl.
 Qed.
 
+Lemma transl_store_single_correct:
+  forall mr mk_instr is_immed src addr args k c (rs: regset) a chunk m m',
+  transl_memory_access_single mk_instr is_immed src addr args k = OK c ->
+  eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some a ->
+  Mem.storev chunk m a rs#(preg_of src) = Some m' ->
+  (forall (r1: sreg) (r2: ireg) (n: int) (rs1: regset),
+    exec_instr ge fn (mk_instr r1 r2 n) rs1 m =
+    exec_store chunk (Val.add rs1#r2 (Vint n)) r1 rs1 m) ->
+  exists rs',
+      exec_straight ge fn c rs m k rs' m'
+   /\ forall r, data_preg r = true -> preg_notin r mr -> rs'#r = rs#r.
+Proof.
+  intros. assert (DR: data_preg (preg_of src) = true) by eauto with asmgen.
+  monadInv H. erewrite sreg_of_eq in * by eauto.
+  eapply transl_memory_access_correct; eauto.
+  destruct a; discriminate || trivial.
+  intros; simpl. econstructor; split. apply exec_straight_one.
+  rewrite H2. unfold exec_store. rewrite H. rewrite H3; auto with asmgen. rewrite H1. eauto. auto.
+  intros; Simpl.
+  simpl; auto.
+Qed.
+
 Lemma transl_store_float_correct:
   forall mr mk_instr is_immed src addr args k c (rs: regset) a chunk m m',
   transl_memory_access_float mk_instr is_immed src addr args k = OK c ->
@@ -1487,7 +1534,7 @@ Proof.
   eapply transl_load_int_correct; eauto.
   eapply transl_load_int_correct; eauto.
   discriminate.
-  eapply transl_load_float_correct; eauto.
+  eapply transl_load_single_correct; eauto.
   eapply transl_load_float_correct; eauto.
   discriminate.
   discriminate.
@@ -1513,7 +1560,7 @@ Proof.
 - eapply transl_store_int_correct; eauto.
 - eapply transl_store_int_correct; eauto.
 - discriminate.
-- eapply transl_store_float_correct; eauto.
+- eapply transl_store_single_correct; eauto.
 - eapply transl_store_float_correct; eauto.
 - discriminate.
 - discriminate.
