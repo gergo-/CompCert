@@ -186,6 +186,10 @@ struct
     | PC -> output_string oc "$pc"
     | RA -> output_string oc "$ra"
 
+  let reg_or_imm oc = function
+    | RIimm n -> fprintf oc "%a" coqint n
+    | RIreg r -> gpreg oc r
+
     (*
   let condition_name = function
     | TCeq -> "eq"
@@ -559,13 +563,13 @@ struct
     | Pset (rd, rs) ->
       fprintf oc "	set %a = %a\n	;;\n" preg rd gpreg rs; 1
     (* Load-store unit instructions *)
-    | Plw (rd, ofs, rbase) ->
+    | Plw (rd, rbase, ofs) ->
       fprintf oc "	lw %a = %a[%a]\n	;;\n" gpreg rd coqint ofs gpreg rbase; 1
-    | Psw (rs, ofs, rbase) ->
+    | Psw (rs, rbase, ofs) ->
       fprintf oc "	sw %a[%a] = %a\n	;;\n" coqint ofs gpreg rbase gpreg rs; 1
     (* ALU instructions *)
-    | Padd (rd, r1, imm) ->
-      fprintf oc "	add %a = %a, %a\n	;;\n" gpreg rd gpreg r1 coqint imm; 1
+    | Padd (rd, r1, op2) ->
+      fprintf oc "	add %a = %a, %a\n	;;\n" gpreg rd gpreg r1 reg_or_imm op2; 1
     (* Multiplier-ALU instructions *)
     (* FPU instructions *)
     (* Pseudo-instructions *)
@@ -577,6 +581,12 @@ struct
       fprintf oc "%a:\n" print_label lbl; 0
     | Pbuiltin(ef, args, res) ->
       fprintf oc "	Pbuiltin (FIXME)\n"; 0
+    | Ploadsymbol (rd, sym, ofs) ->
+        fprintf oc "	make %a = %a\n	;;\n" gpreg rd symbol sym;
+        if ofs <> BinNums.Z0 then begin
+          fprintf oc "	add %a = %a, %a\n	;;\n" gpreg rd gpreg rd coqint ofs; 2
+        end else
+          1
     (*| _ -> assert false*)
 
     (*

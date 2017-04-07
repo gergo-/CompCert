@@ -278,9 +278,8 @@ Remark transl_memory_access_label:
    end) ->
   tail_nolabel k c.
 Proof.
-  unfold transl_memory_access; intros; destruct addr; TailNoLabel.
+  unfold transl_memory_access; intros; destruct addr; unfold indexed_memory_access in H; TailNoLabel.
 (*
-  destruct mk_instr_gen; TailNoLabel.
   destruct mk_instr_gen; TailNoLabel.
 *)
 Qed.
@@ -298,11 +297,11 @@ Proof.
     eapply tail_nolabel_trans. 2: eapply loadind_label; eauto. unfold loadind_int; TailNoLabel.
 *)
   eapply transl_op_label; eauto.
-  (*
   unfold transl_load, transl_memory_access_int, transl_memory_access_float in H.
   destruct m; monadInv H; eapply transl_memory_access_label; eauto; simpl; auto.
   unfold transl_store, transl_memory_access_int, transl_memory_access_float in H.
   destruct m; monadInv H; eapply transl_memory_access_label; eauto; simpl; auto.
+  (*
   destruct s0; monadInv H; TailNoLabel.
   destruct s0; monadInv H; unfold loadind_int; eapply tail_nolabel_trans.
   eapply indexed_memory_access_label; auto with labels. TailNoLabel.
@@ -636,8 +635,7 @@ Opaque loadind.
   exists rs2; split. eauto. split.
   eapply agree_set_undef_mreg; eauto with asmgen.
   (* MPPA *)
-  simpl. destruct op; try simpl in TR; try inversion TR.
-  intro is_parent. inversion is_parent.
+  simpl. destruct op; try simpl in TR; try inversion TR; intro is_parent; inversion is_parent.
 (*
   simpl. destruct op; try congruence. destruct ep; simpl; try congruence. intros.
   rewrite R; auto. apply preg_of_not_R12; auto. exact I.
@@ -650,11 +648,11 @@ Opaque loadind.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   exploit Mem.loadv_extends; eauto. intros [v' [C D]].
   left; eapply exec_straight_steps; eauto; intros. simpl in TR.
-  exploit transl_load_correct; eauto. inversion TR. inversion TR. (* intros [rs2 [P [Q R]]].
+  exploit transl_load_correct; eauto. inversion TR. inversion TR. intros [rs2 [P [Q R]]].
   exists rs2; split. eauto.
   split. eapply agree_set_undef_mreg; eauto. congruence.
+  unfold it1_is_parent.
   simpl; congruence.
-*)
 
 - (* Mstore *)
   assert (eval_addressing tge sp addr rs##args = Some a).
@@ -665,11 +663,11 @@ Opaque loadind.
   exploit Mem.storev_extends; eauto. intros [m2' [C D]].
   left; eapply exec_straight_steps; eauto.
   intros. simpl in TR.
-  exploit transl_store_correct; eauto. inversion TR. inversion TR. (* intros [rs2 [P Q]].
+  exploit transl_store_correct; eauto. inversion TR. inversion TR. intros [rs2 [P Q]].
   exists rs2; split. eauto.
   split. eapply agree_undef_regs; eauto.
+  unfold it1_is_parent.
   simpl; congruence.
-*)
 
 - (* Mcall *)
   assert (f0 = f) by congruence.  subst f0.
@@ -895,7 +893,7 @@ Opaque loadind.
   set (rs4 := nextinstr (rs3#SP <- (parent_sp s))).
   set (rs5 := rs4#PC <- (parent_ra s)).
   assert (exec_straight tge tf
-           (Plw GPR10 (Ptrofs.to_int (fn_retaddr_ofs f)) SP ::
+           (Plw GPR10 SP (Ptrofs.to_int (fn_retaddr_ofs f)) ::
             Pset RA GPR10 ::
             Pfreeframe (fn_stacksize f) (fn_link_ofs f) ::
             Pret :: x) rs0 m'0
@@ -948,7 +946,7 @@ Opaque loadind.
   monadInv EQ0.
   set (tfbody := Pallocframe (fn_stacksize f) (fn_link_ofs f) ::
                  Pget GPR10 RA ::
-                 Psw GPR10 (Ptrofs.to_int (fn_retaddr_ofs f)) SP :: x0) in *.
+                 Psw GPR10 SP (Ptrofs.to_int (fn_retaddr_ofs f)) :: x0) in *.
   set (tf := {| fn_sig := Mach.fn_sig f; fn_code := tfbody |}) in *.
   unfold store_stack in *.
   exploit Mem.alloc_extends. eauto. eauto. apply Zle_refl. apply Zle_refl.
@@ -1016,20 +1014,6 @@ Opaque loadind.
   inv STACKS. simpl in *.
   right. split. omega. split. auto.
   rewrite <- ATPC in H5. econstructor; eauto. congruence.
-
-(* Something, possibly [exploit] applications, leaves shelved goals lying
-   around above. These are simply type-is-inhabited goals. Solve them. This
-   might go away once the inversions on undefined code generation parts are
-   removed. *)
-Unshelve.
-  assumption.
-  assumption.
-  assumption.
-  assumption.
-  assumption.
-  assumption.
-  assumption.
-
 Qed.
 
 Lemma transf_initial_states:

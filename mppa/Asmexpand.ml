@@ -421,12 +421,12 @@ let expand_builtin_inline name args res =
 let expand_instruction instr =
   match instr with
   | Pallocframe (BinNums.Zpos n as sz, pos) ->
-    emit (Padd (GPR12, GPR12, BinNums.Zneg n));
-    emit (Psw (GPR12, pos, GPR12));
+    emit (Padd (GPR12, GPR12, RIimm (BinNums.Zneg n)));
+    emit (Psw (GPR12, GPR12, pos));
     PrintAsmaux.current_function_stacksize := camlint_of_coqint sz
   | Pfreeframe (sz, pos) ->
-    emit (Plw (GPR12, pos, GPR12));
-    emit (Padd (GPR12, GPR12, sz))
+    emit (Plw (GPR12, GPR12, pos));
+    emit (Padd (GPR12, GPR12, RIimm sz))
   (*
   | Pallocframe (sz, ofs) ->
      emit (Pmov (IR12,SOreg IR13));

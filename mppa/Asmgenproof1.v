@@ -32,23 +32,21 @@ Require Import Asmgenproof0.
 
 Local Transparent Archi.ptr64. 
 
-(*
 (** Useful properties of the R14 registers. *)
 
-Lemma ireg_of_not_R14:
-  forall m r, ireg_of m = OK r -> IR r <> IR IR14.
+Lemma gpreg_of_not_R14:
+  forall m r, gpreg_of m = OK r -> GPR r <> GPR GPR14.
 Proof.
   intros. erewrite <- ireg_of_eq; eauto with asmgen.
 Qed.
-Hint Resolve ireg_of_not_R14: asmgen.
+Hint Resolve gpreg_of_not_R14: asmgen.
 
-Lemma ireg_of_not_R14':
-  forall m r, ireg_of m = OK r -> r <> IR14.
+Lemma gpreg_of_not_R14':
+  forall m r, gpreg_of m = OK r -> r <> GPR14.
 Proof.
-  intros. generalize (ireg_of_not_R14 _ _ H). congruence.
+  intros. generalize (gpreg_of_not_R14 _ _ H). congruence.
 Qed.
-Hint Resolve ireg_of_not_R14': asmgen.
-*)
+Hint Resolve gpreg_of_not_R14': asmgen.
 
 (** [undef_flags] and [nextinstr_nf] *)
 
@@ -493,13 +491,12 @@ Qed.
 
 (** Indexed memory loads. *)
 
-(*
 Lemma indexed_memory_access_correct:
-  forall (P: regset -> Prop) (mk_instr: ireg -> int -> instruction)
-         (mk_immed: int -> int) (base: ireg) n k (rs: regset) m m',
-  (forall (r1: ireg) (rs1: regset) n1 k,
+  forall (P: regset -> Prop) (mk_instr: gpreg -> int -> instruction)
+         (mk_immed: int -> int) (base: gpreg) n k (rs: regset) m m',
+  (forall (r1: gpreg) (rs1: regset) n1 k,
     Val.add rs1#r1 (Vint n1) = Val.add rs#base (Vint n) ->
-    (forall (r: preg), if_preg r = true -> r <> IR14 -> rs1 r = rs r) ->
+    (forall (r: preg), if_preg r = true -> (*r <> IR14 ->*) rs1 r = rs r) ->
     exists rs',
     exec_straight ge fn (mk_instr r1 n1 :: k) rs1 m k rs' m' /\ P rs') ->
   exists rs',
@@ -510,6 +507,8 @@ Lemma indexed_memory_access_correct:
 Proof.
   intros until m'; intros SEM.
   unfold indexed_memory_access.
+  apply SEM; auto.
+(*
   destruct (Int.eq n (mk_immed n)).
 - apply SEM; auto.
 - destruct (addimm_correct IR14 base (Int.sub n (mk_immed n)) (mk_instr IR14 (mk_immed n) :: k) rs m)
@@ -521,8 +520,10 @@ Proof.
   rewrite Int.add_neg_zero. rewrite Int.add_zero. auto.
   auto with asmgen.
   exists rs2; split; auto. eapply exec_straight_trans; eauto.
+*)
 Qed.
 
+(*
 Lemma loadind_int_correct:
   forall (base: ireg) ofs dst (rs: regset) m v k,
   Mem.loadv Mint32 m (Val.offset_ptr rs#base ofs) = Some v ->
@@ -997,6 +998,8 @@ Ltac ArgsInv :=
   repeat (match goal with
   | [ H: ireg_of ?x = OK ?y |- _ ] => simpl in *; rewrite (ireg_of_eq _ _ H) in *
   | [ H: freg_of ?x = OK ?y |- _ ] => simpl in *; rewrite (freg_of_eq _ _ H) in *
+  | [ H: gpreg_of ?x = OK ?y |- _ ] => simpl in *; rewrite (gpreg_of_eq _ _ H) in *
+  | [ H: pgpreg_of ?x = OK ?y |- _ ] => simpl in *; rewrite (pgpreg_of_eq _ _ H) in *
   end).
 
 (*
@@ -1161,24 +1164,6 @@ Lemma transl_op_correct_same:
 Proof.
   intros until v; intros TR EV NOCMP.
   unfold transl_op in TR; destruct op; ArgsInv; simpl in EV; inv EV; try (TranslOpSimpl; fail).
-
-  (* Oadd *)
-  (* FIXME: This cannot really be this complicated. *)
-  unfold gpreg_of in * |-.
-  TranslOpSimpl.
-
-  destruct (preg_of res), (preg_of m0);
-    try inversion EQ; try inversion EQ0; try inversion EQ1.
-
-  (* Register x is updated. *)
-  injection EQ; injection EQ1.
-  intros.
-  apply Pregmap.gss.
-
-  (* A different register is updated. *)
-  destruct (preg_of res); try inversion EQ.
-  injection EQ; intro eq; rewrite eq in *.
-  apply Pregmap.gso; assumption.
 
 (*
   (* Omove *)
@@ -1396,9 +1381,9 @@ Lemma transl_memory_access_correct:
 Proof.
   intros until m'; intros TR EA ADDR MK1 MK2.
   unfold transl_memory_access in TR; destruct addr; ArgsInv; simpl in EA; inv EA.
-(*
   (* Aindexed *)
   apply indexed_memory_access_correct. exact MK1.
+(*
   (* Aindexed2 *)
   destruct mk_instr_gen as [mk | ]; monadInv TR. apply MK2.
   simpl. erewrite ! ireg_of_eq; eauto.
@@ -1521,19 +1506,9 @@ Lemma transl_load_correct:
    /\ forall r, data_preg r = true -> r <> preg_of dst -> rs'#r = rs#r.
 Proof.
   intros.
-  (* FIXME: dirty hack as long as [transl_load] is not properly defined *)
-  inversion H.
+  intros. destruct chunk; simpl in H; try inversion H.
+  eapply transl_load_int_correct; eauto.
 (*
-  intros. destruct chunk; simpl in H.
-  eapply transl_load_int_correct; eauto.
-  eapply transl_load_int_correct; eauto.
-  eapply transl_load_int_correct; eauto.
-  eapply transl_load_int_correct; eauto.
-  eapply transl_load_int_correct; eauto.
-  discriminate.
-  eapply transl_load_float_correct; eauto.
-  eapply transl_load_float_correct; eauto.
-  discriminate.
   discriminate.
 *)
 Qed.
@@ -1547,11 +1522,8 @@ Lemma transl_store_correct:
       exec_straight ge fn c rs m k rs' m'
    /\ forall r, data_preg r = true -> preg_notin r (destroyed_by_store chunk addr) -> rs'#r = rs#r.
 Proof.
-  intros.
-  (* FIXME: dirty hack as long as [transl_store] is not properly defined *)
-  inversion H.
+  intros. destruct chunk; simpl in H; try inversion H.
 (*
-  intros. destruct chunk; simpl in H.
 - assert (Mem.storev Mint8unsigned m a (rs (preg_of src)) = Some m').
     rewrite <- H1. destruct a; simpl; auto. symmetry. apply Mem.store_signed_unsigned_8.
   clear H1. eapply transl_store_int_correct; eauto.
@@ -1559,7 +1531,9 @@ Proof.
 - assert (Mem.storev Mint16unsigned m a (rs (preg_of src)) = Some m').
     rewrite <- H1. destruct a; simpl; auto. symmetry. apply Mem.store_signed_unsigned_16.
   clear H1. eapply transl_store_int_correct; eauto.
+*)
 - eapply transl_store_int_correct; eauto.
+  (*
 - eapply transl_store_int_correct; eauto.
 - discriminate.
 - eapply transl_store_float_correct; eauto.

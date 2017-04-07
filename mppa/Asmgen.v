@@ -44,6 +44,20 @@ Definition pgpreg_of (r: mreg) : res pgpreg :=
 Definition ireg_of := gpreg_of.
 Definition freg_of := pgpreg_of.
 
+(* These lemmas correspond to [ireg_of_eq] and [freg_of_eq] in the
+  machine-independent [Asmgenproof0] module. *)
+Lemma gpreg_of_eq:
+  forall r r', gpreg_of r = OK r' -> preg_of r = GPR r'.
+Proof.
+  unfold gpreg_of; intros. destruct (preg_of r); inv H; auto.
+Qed.
+
+Lemma pgpreg_of_eq:
+  forall r r', pgpreg_of r = OK r' -> preg_of r = PGPR r'.
+Proof.
+  unfold pgpreg_of; intros. destruct (preg_of r); inv H; auto.
+Qed.
+
 (** Recognition of integer immediate arguments for arithmetic operations.
 - ARM: immediates are 8-bit quantities zero-extended and rotated right
   by 0, 2, 4, ... 30 bits.  In other words, [n] is an immediate iff
@@ -374,9 +388,11 @@ Definition transl_op
   | Osingleconst f, nil =>
       do r <- gpreg_of res;
       OK (Pflis r f :: k)
+*)
   | Oaddrsymbol s ofs, nil =>
       do r <- gpreg_of res;
       OK (Ploadsymbol r s ofs :: k)
+         (*
   | Oaddrstack n, nil =>
       do r <- gpreg_of res;
       OK (addimm r IR13 (Ptrofs.to_int n) k)
@@ -394,16 +410,13 @@ Definition transl_op
           else
             Pmov r (SOlsl r1 (Int.repr 16)) ::
             Pmov r (SOasr r (Int.repr 16)) :: k)
+*)
   | Oadd, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Padd r r1 r2 :: k)
-  | Oaddshift s, a1 :: a2 :: nil =>
-      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Padd r r1 (transl_shift s r2) :: k)
-*)
+      OK (Padd r r1 (RIreg r2) :: k)
   | Oaddimm n, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
-      OK (Padd r r1 n :: k)
+      OK (Padd r r1 (RIimm n) :: k)
          (*
   | Osub, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
@@ -576,16 +589,19 @@ Definition transl_op
 
 (** Accessing data in the stack frame. *)
 
-(*
 Definition indexed_memory_access
-    (mk_instr: ireg -> int -> instruction)
+    (mk_instr: gpreg -> int -> instruction)
     (mk_immed: int -> int)
-    (base: ireg) (n: int) (k: code) :=
+    (base: gpreg) (n: int) (k: code) :=
+  mk_instr base n :: k.
+(*
   let n1 := mk_immed n in
   if Int.eq n n1
   then mk_instr base n :: k
   else addimm IR14 base (Int.sub n n1) (mk_instr IR14 n1 :: k).
+*)
 
+(*
 Definition loadind_int (base: ireg) (ofs: ptrofs) (dst: ireg) (k: code) :=
   indexed_memory_access (fun base n => Pldr dst base (SOimm n)) mk_immed_mem_word base (Ptrofs.to_int ofs) k.
 
@@ -632,10 +648,10 @@ Definition transl_memory_access
      (mk_immed: int -> int)
      (addr: addressing) (args: list mreg) (k: code) :=
   match addr, args return res code with
-      (*
   | Aindexed n, a1 :: nil =>
       do r1 <- gpreg_of a1;
       OK (indexed_memory_access mk_instr_imm mk_immed r1 n k)
+      (*
   | Aindexed2, a1 :: a2 :: nil =>
       match mk_instr_gen with
       | Some f =>
@@ -691,8 +707,10 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
       transl_memory_access_int Pldrsh mk_immed_mem_small dst addr args k
   | Mint16unsigned =>
       transl_memory_access_int Pldrh mk_immed_mem_small dst addr args k
+*)
   | Mint32 =>
-      transl_memory_access_int Pldr mk_immed_mem_word dst addr args k
+      transl_memory_access_int Plw mk_immed_mem_word dst addr args k
+      (*
   | Mfloat32 =>
       transl_memory_access_float Pflds mk_immed_mem_float dst addr args k
   | Mfloat64 =>
@@ -714,8 +732,10 @@ Definition transl_store (chunk: memory_chunk) (addr: addressing)
       transl_memory_access_int Pstrh mk_immed_mem_small src addr args k
   | Mint16unsigned =>
       transl_memory_access_int Pstrh mk_immed_mem_small src addr args k
+*)
   | Mint32 =>
-      transl_memory_access_int Pstr mk_immed_mem_word src addr args k
+      transl_memory_access_int Psw mk_immed_mem_word src addr args k
+      (*
   | Mfloat32 =>
       transl_memory_access_float Pfsts mk_immed_mem_float src addr args k
   | Mfloat64 =>
@@ -742,11 +762,11 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction) (r12_is_parent:
 *)
   | Mop op args res =>
       transl_op op args res k
-                (*
   | Mload chunk addr args dst =>
       transl_load chunk addr args dst k
   | Mstore chunk addr args src =>
       transl_store chunk addr args src k
+                (*
   | Mcall sig (inl arg) =>
       do r <- gpreg_of arg; OK (Pblreg r sig :: k)
   | Mcall sig (inr symb) =>
@@ -774,7 +794,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction) (r12_is_parent:
 *)
   | Mreturn =>
     (* get the return address back from the stack *)
-    OK (Plw GPR10 (Ptrofs.to_int f.(fn_retaddr_ofs)) SP ::
+    OK (Plw GPR10 SP (Ptrofs.to_int f.(fn_retaddr_ofs)) ::
         Pset RA GPR10 ::
         Pfreeframe f.(fn_stacksize) f.(fn_link_ofs) ::
         Pret :: k)
@@ -829,7 +849,7 @@ Definition transl_function (f: Mach.function) :=
   OK (mkfunction f.(Mach.fn_sig)
         (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) ::
          Pget GPR10 RA ::
-         Psw GPR10 (Ptrofs.to_int f.(fn_retaddr_ofs)) SP :: c)).
+         Psw GPR10 SP (Ptrofs.to_int f.(fn_retaddr_ofs)) :: c)).
 
 Definition transf_function (f: Mach.function) : res Asm.function :=
   do tf <- transl_function f;

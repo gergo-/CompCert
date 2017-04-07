@@ -168,6 +168,10 @@ Inductive shift_op : Type :=
   | SOror: ireg -> int -> shift_op.
 *)
 
+Inductive reg_or_imm: Type :=
+  | RIimm (i: int)
+  | RIreg (r: gpreg).
+
 Inductive testcond : Type :=
   | TCne:   testcond    (**r not equal *)
   | TCeq:   testcond    (**r equal *)
@@ -192,10 +196,10 @@ Inductive instruction : Type :=
   | Pret                                         (**r return *)
   | Pset (rd: preg) (rs: gpreg)                  (**r set system register *)
   (* Load-store unit instructions *)
-  | Plw (rd: gpreg) (ofs: int) (rbase: gpreg)    (**r load word (immediate) *)  (* FIXME: generalize *)
-  | Psw (rs: gpreg) (ofs: int) (rbase: gpreg)    (**r store word (immediate) *)  (* FIXME: generalize *)
+  | Plw (rd: gpreg) (rbase: gpreg) (ofs: int)    (**r load word (immediate) *)  (* FIXME: generalize *)
+  | Psw (rs: gpreg) (rbase: gpreg) (ofs: int)    (**r store word (immediate) *)  (* FIXME: generalize *)
   (* ALU instructions *)
-  | Padd (rd r1: gpreg) (imm: int)               (**r integer addition *)
+  | Padd (rd r1: gpreg) (op2: reg_or_imm)        (**r integer addition *)
   (* Multiplier-ALU instructions *)
   (* FPU instructions *)
 (*
@@ -281,8 +285,8 @@ Inductive instruction : Type :=
   | Plabel (l: label)                               (**r define a code label *)
   | Pbuiltin (ef: external_function) (args: list (builtin_arg preg)) (res: builtin_res preg)
                                                     (**r built-in function (pseudo) *)
+  | Ploadsymbol (rd: gpreg) (sym: ident) (ofs: ptrofs)  (**r load the address of a symbol *)
 (*
-  | Ploadsymbol: ireg -> ident -> ptrofs -> instruction (**r load the address of a symbol *)
   | Pmovite: testcond -> ireg -> shift_op -> shift_op -> instruction (**r integer conditional move *)
   | Pbtbl: ireg -> list label -> instruction       (**r N-way branch through a jump table *)
   | Padc: ireg -> ireg -> shift_op -> instruction     (**r add with carry *)
@@ -315,15 +319,12 @@ Inductive instruction : Type :=
 (** The pseudo-instructions are the following:
 
 - [Plabel]: define a code label at the current program point.
-- [Ploadsymbol]: load the address of a symbol in an integer register.
-  Expands to a load from an address in the constant data section
-  initialized with the symbol value:
+- [Ploadsymbol]: load the address of a symbol plus an offset into an integer
+  register. Expands to a [make] instruction and an add of the offset if it is
+  nonzero:
 <<
-  FIXME for MPPA
-        ldr     rdst, lbl
-        .const_data
-lbl:    .word   symbol
-        .text
+        make $rd = symbol
+        add $rd = $rd, offset    # if offset <> 0
 >>
   Initialized data in the constant data section are not modeled here,
   which is why we use a pseudo-instruction for this purpose.
@@ -475,6 +476,14 @@ Definition goto_label (f: function) (lbl: label) (rs: regset) (m: mem) :=
     end
   end.
 
+(** Evaluation of register-or-immediate operands *)
+
+Definition eval_reg_or_imm (ri: reg_or_imm) (rs: regset) :=
+  match ri with
+  | RIimm n => Vint n
+  | RIreg r => rs#r
+  end.
+
 (** Auxiliaries for memory accesses *)
 
 Definition exec_load (chunk: memory_chunk) (addr: val) (r: preg)
@@ -575,31 +584,31 @@ Definition compare_float32 (rs: regset) (v1 v2: val) :=
 *)
 
 Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
-  let _ := ge in  (* FIXME: remove when [ge] is actually used here *)
   match i with
   (* Branch control unit instructions *)
   | Pget rd r1 =>
     (* Only allow get from [RA] for now. *)
     match r1 with
-      | RA => Next (nextinstr (rs#rd <- (rs#r1))) m
-      | _ => Stuck
+    | RA => Next (nextinstr (rs#rd <- (rs#r1))) m
+    | _ => Stuck
     end
   | Pret =>
       Next (rs#PC <- (rs#RA)) m
   | Pset rd r1 =>
     (* Only allow to set [RA] for now. *)
     match rd with
-      | RA => Next (nextinstr (rs#rd <- (rs#r1))) m
-      | _ => Stuck
+    | RA => Next (nextinstr (rs#rd <- (rs#r1))) m
+    | _ => Stuck
     end
   (* Load-store unit instructions *)
-  | Plw rd ofs rbase =>
+  | Plw rd rbase ofs =>
     exec_load Mint32 (Val.add rs#rbase (Vint ofs)) rd rs m
-  | Psw rd ofs rbase =>
+  | Psw rd rbase ofs =>
     exec_store Mint32 (Val.add rs#rbase (Vint ofs)) rd rs m
   (* ALU instructions *)
-  | Padd rd r1 imm =>
-      Next (nextinstr (rs#rd <- (Val.add rs#r1 (Vint imm)))) m
+  | Padd rd r1 op2 =>
+    let op2 := eval_reg_or_imm op2 rs in
+    Next (nextinstr (rs#rd <- (Val.add rs#r1 op2))) m
   (* Multiplier-ALU instructions *)
   (* FPU instructions *)
 
@@ -608,25 +617,27 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     let (m1, stk) := Mem.alloc m 0 sz in
     let sp := (Vptr stk Ptrofs.zero) in
     match Mem.storev Mint32 m1 (Val.offset_ptr sp pos) rs#SP with
-      | None => Stuck
-      | Some m2 => Next (nextinstr (rs#SP <- sp)) m2
+    | None => Stuck
+    | Some m2 => Next (nextinstr (rs#SP <- sp)) m2
     end
   | Pfreeframe sz pos =>
     match Mem.loadv Mint32 m (Val.offset_ptr rs#SP pos) with
-      | None => Stuck
-      | Some v =>
+    | None => Stuck
+    | Some v =>
         match rs#SP with
-          | Vptr stk ofs =>
+        | Vptr stk ofs =>
             match Mem.free m stk 0 sz with
-              | None => Stuck
-              | Some m' => Next (nextinstr (rs#SP <- v)) m'
+            | None => Stuck
+            | Some m' => Next (nextinstr (rs#SP <- v)) m'
             end
-          | _ => Stuck
+        | _ => Stuck
         end
     end
   | Plabel lbl =>
       Next (nextinstr rs) m
   | Pbuiltin ef args res => Stuck   (**r treated specially below *)
+  | Ploadsymbol rd sym ofs =>
+    Next (nextinstr (rs#rd <- (Genv.symbol_address ge sym ofs))) m
   (*| _ => Stuck*)
   end.
 
