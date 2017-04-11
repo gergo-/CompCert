@@ -3,6 +3,7 @@
 (*              The Compcert verified compiler                         *)
 (*                                                                     *)
 (*          Xavier Leroy, INRIA Paris-Rocquencourt                     *)
+(*          Gergö Barany, INRIA Paris                                  *)
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
@@ -1396,9 +1397,9 @@ Proof.
 *)
 Qed.
 
-Lemma transl_load_int_correct:
+Lemma transl_load_word_correct:
   forall mk_instr is_immed dst addr args k c (rs: regset) a chunk m v,
-  transl_memory_access_int mk_instr is_immed dst addr args k = OK c ->
+  transl_memory_access_word mk_instr is_immed dst addr args k = OK c ->
   eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some a ->
   Mem.loadv chunk m a = Some v ->
   (forall (r1 r2: gpreg) (n: int) (rs1: regset),
@@ -1409,11 +1410,11 @@ Lemma transl_load_int_correct:
    /\ rs'#(preg_of dst) = v
    /\ forall r, data_preg r = true -> r <> preg_of dst -> rs'#r = rs#r.
 Proof.
-  intros. monadInv H. erewrite ireg_of_eq by eauto.
+  intros. monadInv H. erewrite gpreg_of_eq by eauto.
   eapply transl_memory_access_correct; eauto.
   destruct a; discriminate || trivial.
   intros; simpl. econstructor; split. apply exec_straight_one.
-  rewrite H2. unfold exec_load. (*simpl eval_shift_op.*) rewrite H. rewrite H1. eauto. auto.
+  rewrite H2. unfold exec_load. rewrite H. rewrite H1. eauto. auto.
   split. Simpl. intros; Simpl.
   simpl; intros.
   econstructor; split. apply exec_straight_one.
@@ -1421,13 +1422,12 @@ Proof.
   split. Simpl. intros; Simpl.
 Qed.
 
-(*
-Lemma transl_load_float_correct:
+Lemma transl_load_doubleword_correct:
   forall mk_instr is_immed dst addr args k c (rs: regset) a chunk m v,
-  transl_memory_access_float mk_instr is_immed dst addr args k = OK c ->
+  transl_memory_access_doubleword mk_instr is_immed dst addr args k = OK c ->
   eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some a ->
   Mem.loadv chunk m a = Some v ->
-  (forall (r1: gpreg) (r2: gpreg) (n: int) (rs1: regset),
+  (forall (r1: pgpreg) (r2: gpreg) (n: int) (rs1: regset),
     exec_instr ge fn (mk_instr r1 r2 n) rs1 m =
     exec_load chunk (Val.add rs1#r2 (Vint n)) r1 rs1 m) ->
   exists rs',
@@ -1435,19 +1435,20 @@ Lemma transl_load_float_correct:
    /\ rs'#(preg_of dst) = v
    /\ forall r, data_preg r = true -> r <> preg_of dst -> rs'#r = rs#r.
 Proof.
-  intros. monadInv H. erewrite freg_of_eq. by eauto.
+  intros. monadInv H. erewrite pgpreg_of_eq by eauto.
   eapply transl_memory_access_correct; eauto.
   destruct a; discriminate || trivial.
   intros; simpl. econstructor; split. apply exec_straight_one.
   rewrite H2. unfold exec_load. rewrite H. rewrite H1. eauto. auto.
   split. Simpl. intros; Simpl.
-  simpl; auto.
+  econstructor; split. apply exec_straight_one.
+  rewrite H2. unfold exec_load. rewrite H. rewrite H1. eauto. auto.
+  split. Simpl. intros; Simpl.
 Qed.
-*)
 
-Lemma transl_store_int_correct:
+Lemma transl_store_word_correct:
   forall mr mk_instr is_immed src addr args k c (rs: regset) a chunk m m',
-  transl_memory_access_int mk_instr is_immed src addr args k = OK c ->
+  transl_memory_access_word mk_instr is_immed src addr args k = OK c ->
   eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some a ->
   Mem.storev chunk m a rs#(preg_of src) = Some m' ->
   (forall (r1 r2: gpreg) (n: int) (rs1: regset),
@@ -1471,13 +1472,12 @@ Proof.
   intros; Simpl.
 Qed.
 
-(*
-Lemma transl_store_float_correct:
+Lemma transl_store_doubleword_correct:
   forall mr mk_instr is_immed src addr args k c (rs: regset) a chunk m m',
-  transl_memory_access_float mk_instr is_immed src addr args k = OK c ->
+  transl_memory_access_doubleword mk_instr is_immed src addr args k = OK c ->
   eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some a ->
   Mem.storev chunk m a rs#(preg_of src) = Some m' ->
-  (forall (r1: freg) (r2: ireg) (n: int) (rs1: regset),
+  (forall (r1: pgpreg) (r2: gpreg) (n: int) (rs1: regset),
     exec_instr ge fn (mk_instr r1 r2 n) rs1 m =
     exec_store chunk (Val.add rs1#r2 (Vint n)) r1 rs1 m) ->
   exists rs',
@@ -1485,15 +1485,17 @@ Lemma transl_store_float_correct:
    /\ forall r, data_preg r = true -> preg_notin r mr -> rs'#r = rs#r.
 Proof.
   intros. assert (DR: data_preg (preg_of src) = true) by eauto with asmgen.
-  monadInv H. erewrite freg_of_eq in * by eauto.
+  monadInv H. erewrite pgpreg_of_eq in * by eauto.
   eapply transl_memory_access_correct; eauto.
   destruct a; discriminate || trivial.
   intros; simpl. econstructor; split. apply exec_straight_one.
   rewrite H2. unfold exec_store. rewrite H. rewrite H3; auto with asmgen. rewrite H1. eauto. auto.
   intros; Simpl.
-  simpl; auto.
+  simpl; intros.
+  econstructor; split. apply exec_straight_one.
+  rewrite H2. unfold exec_store. rewrite H. rewrite H1. eauto. auto.
+  intros; Simpl.
 Qed.
-*)
 
 Lemma transl_load_correct:
   forall chunk addr args dst k c (rs: regset) a m v,
@@ -1507,7 +1509,10 @@ Lemma transl_load_correct:
 Proof.
   intros.
   intros. destruct chunk; simpl in H; try inversion H.
-  eapply transl_load_int_correct; eauto.
+- eapply transl_load_word_correct; eauto.
+- eapply transl_load_doubleword_correct; eauto.
+- eapply transl_load_word_correct; eauto.
+- eapply transl_load_doubleword_correct; eauto.
 (*
   discriminate.
 *)
@@ -1532,7 +1537,10 @@ Proof.
     rewrite <- H1. destruct a; simpl; auto. symmetry. apply Mem.store_signed_unsigned_16.
   clear H1. eapply transl_store_int_correct; eauto.
 *)
-- eapply transl_store_int_correct; eauto.
+- eapply transl_store_word_correct; eauto.
+- eapply transl_store_doubleword_correct; eauto.
+- eapply transl_store_word_correct; eauto.
+- eapply transl_store_doubleword_correct; eauto.
   (*
 - eapply transl_store_int_correct; eauto.
 - discriminate.

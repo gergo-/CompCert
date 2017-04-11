@@ -3,6 +3,7 @@
 (*              The Compcert verified compiler                         *)
 (*                                                                     *)
 (*          Xavier Leroy, INRIA Paris-Rocquencourt                     *)
+(*          Gergö Barany, INRIA Paris                                  *)
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
@@ -297,9 +298,9 @@ Proof.
     eapply tail_nolabel_trans. 2: eapply loadind_label; eauto. unfold loadind_int; TailNoLabel.
 *)
   eapply transl_op_label; eauto.
-  unfold transl_load, transl_memory_access_int, transl_memory_access_float in H.
+  unfold transl_load, transl_memory_access_word, transl_memory_access_doubleword in H.
   destruct m; monadInv H; eapply transl_memory_access_label; eauto; simpl; auto.
-  unfold transl_store, transl_memory_access_int, transl_memory_access_float in H.
+  unfold transl_store, transl_memory_access_word, transl_memory_access_doubleword in H.
   destruct m; monadInv H; eapply transl_memory_access_label; eauto; simpl; auto.
   (*
   destruct s0; monadInv H; TailNoLabel.
@@ -893,7 +894,7 @@ Opaque loadind.
   set (rs4 := nextinstr (rs3#SP <- (parent_sp s))).
   set (rs5 := rs4#PC <- (parent_ra s)).
   assert (exec_straight tge tf
-           (Plw GPR10 SP (Ptrofs.to_int (fn_retaddr_ofs f)) ::
+           (Plw Wint GPR10 SP (Ptrofs.to_int (fn_retaddr_ofs f)) ::
             Pset RA GPR10 ::
             Pfreeframe (fn_stacksize f) (fn_link_ofs f) ::
             Pret :: x) rs0 m'0
@@ -946,7 +947,7 @@ Opaque loadind.
   monadInv EQ0.
   set (tfbody := Pallocframe (fn_stacksize f) (fn_link_ofs f) ::
                  Pget GPR10 RA ::
-                 Psw GPR10 SP (Ptrofs.to_int (fn_retaddr_ofs f)) :: x0) in *.
+                 Psw Wint GPR10 SP (Ptrofs.to_int (fn_retaddr_ofs f)) :: x0) in *.
   set (tf := {| fn_sig := Mach.fn_sig f; fn_code := tfbody |}) in *.
   unfold store_stack in *.
   exploit Mem.alloc_extends. eauto. eauto. apply Zle_refl. apply Zle_refl.

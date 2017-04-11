@@ -3,6 +3,7 @@
 (*              The Compcert verified compiler                         *)
 (*                                                                     *)
 (*          Xavier Leroy, INRIA Paris-Rocquencourt                     *)
+(*          Gergö Barany, INRIA Paris                                  *)
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
@@ -411,28 +412,28 @@ Definition transl_op
             Pmov r (SOlsl r1 (Int.repr 16)) ::
             Pmov r (SOasr r (Int.repr 16)) :: k)
 *)
+  | Oneg, a1 :: nil =>
+      do r <- gpreg_of res; do r1 <- gpreg_of a1;
+      OK (Pneg r r1 :: k)
   | Oadd, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
       OK (Padd r r1 (RIreg r2) :: k)
   | Oaddimm n, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
       OK (Padd r r1 (RIimm n) :: k)
-         (*
-  | Osub, a1 :: a2 :: nil =>
+  | Osbf, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Psub r r1 (SOreg r2) :: k)
-  | Osubshift s, a1 :: a2 :: nil =>
-      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Psub r r1 (transl_shift s r2) :: k)
-  | Orsubshift s, a1 :: a2 :: nil =>
-      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Prsb r r1 (transl_shift s r2) :: k)
-  | Orsubimm n, a1 :: nil =>
+      OK (Psbf r r1 (RIreg r2) :: k)
+  | Osbfimm n, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
-      OK (rsubimm r r1 n k)
+      OK (Psbf r r1 (RIimm n) :: k)
   | Omul, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pmul r r1 r2 :: k)
+      OK (Pmulwdl r r1 (RIreg r2) :: k)
+  | Omulimm n, a1 :: nil =>
+      do r <- gpreg_of res; do r1 <- gpreg_of a1;
+      OK (Pmulwdl r r1 (RIimm n) :: k)
+         (*
   | Omla, a1 :: a2 :: a3 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
       do r2 <- gpreg_of a2; do r3 <- gpreg_of a3;
@@ -443,16 +444,6 @@ Definition transl_op
   | Omulhu, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
       OK (Pumull IR14 r r1 r2 :: k)
-  | Odiv, a1 :: a2 :: nil =>
-      assertion (mreg_eq res R0);
-      assertion (mreg_eq a1 R0);
-      assertion (mreg_eq a2 R1);
-      OK (Psdiv :: k)
-  | Odivu, a1 :: a2 :: nil =>
-      assertion (mreg_eq res R0);
-      assertion (mreg_eq a1 R0);
-      assertion (mreg_eq a2 R1);
-      OK (Pudiv :: k)
   | Oand, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
       OK (Pand r r1 (SOreg r2) :: k)
@@ -512,42 +503,63 @@ Definition transl_op
         OK (Pmov IR14 (SOasr r1 (Int.repr 31)) ::
             Padd IR14 r1 (SOlsr IR14 (Int.sub Int.iwordsize n)) ::
             Pmov r (SOasr IR14 n) :: k)
-  | Onegf, a1 :: nil =>
-      do r <- gpreg_of res; do r1 <- gpreg_of a1;
-      OK (Pfnegd r r1 :: k)
   | Oabsf, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
       OK (Pfabsd r r1 :: k)
+*)
+  | Onegf, a1 :: nil =>
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1;
+      OK (Pfnegd r r1 :: k)
   | Oaddf, a1 :: a2 :: nil =>
-      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
       OK (Pfaddd r r1 r2 :: k)
-  | Osubf, a1 :: a2 :: nil =>
-      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pfsubd r r1 r2 :: k)
+  | Osbff, a1 :: a2 :: nil =>
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
+      OK (Pfsbfd r r1 r2 :: k)
   | Omulf, a1 :: a2 :: nil =>
-      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
       OK (Pfmuld r r1 r2 :: k)
+         (*
   | Odivf, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
       OK (Pfdivd r r1 r2 :: k)
-  | Onegfs, a1 :: nil =>
-      do r <- gpreg_of res; do r1 <- gpreg_of a1;
-      OK (Pfnegs r r1 :: k)
   | Oabsfs, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
       OK (Pfabss r r1 :: k)
+*)
+  | Onegfs, a1 :: nil =>
+      do r <- gpreg_of res; do r1 <- gpreg_of a1;
+      OK (Pfneg r r1 :: k)
   | Oaddfs, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pfadds r r1 r2 :: k)
-  | Osubfs, a1 :: a2 :: nil =>
+      OK (Pfadd r r1 r2 :: k)
+  | Osbffs, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pfsubs r r1 r2 :: k)
+      OK (Pfsbf r r1 r2 :: k)
   | Omulfs, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pfmuls r r1 r2 :: k)
+      OK (Pfmul r r1 r2 :: k)
+         (*
   | Odivfs, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
       OK (Pfdivs r r1 r2 :: k)
+          *)
+  | Onegl, a1 :: nil =>
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1;
+      OK (Pnegd r r1 :: k)
+  | Oaddl, a1 :: a2 :: nil =>
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
+      OK (Paddd r r1 (PRIreg r2) :: k)
+  | Oaddlimm n, a1 :: nil =>
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1;
+      OK (Paddd r r1 (PRIimm n) :: k)
+  | Osbfl, a1 :: a2 :: nil =>
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
+      OK (Psbfd r r1 (PRIreg r2) :: k)
+  | Osbflimm n, a1 :: nil =>
+      do r <- pgpreg_of res; do r1 <- pgpreg_of a1;
+      OK (Psbfd r r1 (PRIimm n) :: k)
+         (*
   | Osingleoffloat, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
       OK (Pfcvtsd r r1 :: k)
@@ -675,7 +687,7 @@ Definition transl_memory_access
       Error(msg "Asmgen.transl_memory_access")
   end.
 
-Definition transl_memory_access_int
+Definition transl_memory_access_word
      (mk_instr: gpreg -> gpreg -> int -> instruction)
      (mk_immed: int -> int)
      (dst: mreg) (addr: addressing) (args: list mreg) (k: code) :=
@@ -685,14 +697,14 @@ Definition transl_memory_access_int
     (Some (mk_instr rd))
     mk_immed addr args k.
 
-Definition transl_memory_access_float
-     (mk_instr: gpreg -> gpreg -> int -> instruction)
+Definition transl_memory_access_doubleword
+     (mk_instr: pgpreg -> gpreg -> int -> instruction)
      (mk_immed: int -> int)
      (dst: mreg) (addr: addressing) (args: list mreg) (k: code) :=
-  do rd <- gpreg_of dst;
+  do rd <- pgpreg_of dst;
   transl_memory_access
-    (mk_instr rd)
-    None
+    (fun r n => mk_instr rd r n)
+    (Some (mk_instr rd))
     mk_immed addr args k.
 
 Definition transl_load (chunk: memory_chunk) (addr: addressing)
@@ -709,13 +721,13 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
       transl_memory_access_int Pldrh mk_immed_mem_small dst addr args k
 *)
   | Mint32 =>
-      transl_memory_access_int Plw mk_immed_mem_word dst addr args k
-      (*
+      transl_memory_access_word (Plw Wint) mk_immed_mem_word dst addr args k
   | Mfloat32 =>
-      transl_memory_access_float Pflds mk_immed_mem_float dst addr args k
+      transl_memory_access_word (Plw Wsingle) mk_immed_mem_word dst addr args k
+  | Mint64 =>
+      transl_memory_access_doubleword (Pld Dlong) mk_immed_mem_word dst addr args k
   | Mfloat64 =>
-      transl_memory_access_float Pfldd mk_immed_mem_float dst addr args k
-*)
+      transl_memory_access_doubleword (Pld Dfloat) mk_immed_mem_word dst addr args k
   | _ =>
       Error (msg "Asmgen.transl_load")
   end.
@@ -734,13 +746,13 @@ Definition transl_store (chunk: memory_chunk) (addr: addressing)
       transl_memory_access_int Pstrh mk_immed_mem_small src addr args k
 *)
   | Mint32 =>
-      transl_memory_access_int Psw mk_immed_mem_word src addr args k
-      (*
+      transl_memory_access_word (Psw Wint) mk_immed_mem_word src addr args k
   | Mfloat32 =>
-      transl_memory_access_float Pfsts mk_immed_mem_float src addr args k
+      transl_memory_access_word (Psw Wsingle) mk_immed_mem_word src addr args k
+  | Mint64 =>
+      transl_memory_access_doubleword (Psd Dlong) mk_immed_mem_word src addr args k
   | Mfloat64 =>
-      transl_memory_access_float Pfstd mk_immed_mem_float src addr args k
-*)
+      transl_memory_access_doubleword (Psd Dfloat) mk_immed_mem_word src addr args k
   | _ =>
       Error (msg "Asmgen.transl_store")
   end.
@@ -794,7 +806,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction) (r12_is_parent:
 *)
   | Mreturn =>
     (* get the return address back from the stack *)
-    OK (Plw GPR10 SP (Ptrofs.to_int f.(fn_retaddr_ofs)) ::
+    OK (Plw Wint GPR10 SP (Ptrofs.to_int f.(fn_retaddr_ofs)) ::
         Pset RA GPR10 ::
         Pfreeframe f.(fn_stacksize) f.(fn_link_ofs) ::
         Pret :: k)
@@ -849,7 +861,7 @@ Definition transl_function (f: Mach.function) :=
   OK (mkfunction f.(Mach.fn_sig)
         (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) ::
          Pget GPR10 RA ::
-         Psw GPR10 SP (Ptrofs.to_int f.(fn_retaddr_ofs)) :: c)).
+         Psw Wint GPR10 SP (Ptrofs.to_int f.(fn_retaddr_ofs)) :: c)).
 
 Definition transf_function (f: Mach.function) : res Asm.function :=
   do tf <- transl_function f;

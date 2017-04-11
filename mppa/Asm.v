@@ -4,6 +4,7 @@
 (*              The Compcert verified compiler                         *)
 (*                                                                     *)
 (*          Xavier Leroy, INRIA Paris-Rocquencourt                     *)
+(*          Gergö Barany, INRIA Paris                                  *)
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
@@ -168,9 +169,33 @@ Inductive shift_op : Type :=
   | SOror: ireg -> int -> shift_op.
 *)
 
+(* The MPPA's load/store word instructions work for both [int] and [single],
+  there are no separate instructions for these types. CompCert assumes
+  typed memory accesses, so we use these tags to mark the intended data type
+  of the access. They are ignored by the assembly printer. *)
+Inductive word_typ: Type := Wint | Wsingle.
+
+Definition word_chunk wt :=
+  match wt with
+  | Wint => Mint32
+  | Wsingle => Mfloat32
+  end.
+
+Inductive dword_typ: Type := Dlong | Dfloat.
+
+Definition dword_chunk dt :=
+  match dt with
+  | Dlong => Mint64
+  | Dfloat => Mfloat64
+  end.
+
 Inductive reg_or_imm: Type :=
   | RIimm (i: int)
   | RIreg (r: gpreg).
+
+Inductive preg_or_imm: Type :=
+  | PRIimm (i: int64)
+  | PRIreg (r: pgpreg).
 
 Inductive testcond : Type :=
   | TCne:   testcond    (**r not equal *)
@@ -196,12 +221,28 @@ Inductive instruction : Type :=
   | Pret                                         (**r return *)
   | Pset (rd: preg) (rs: gpreg)                  (**r set system register *)
   (* Load-store unit instructions *)
-  | Plw (rd: gpreg) (rbase: gpreg) (ofs: int)    (**r load word (immediate) *)  (* FIXME: generalize *)
-  | Psw (rs: gpreg) (rbase: gpreg) (ofs: int)    (**r store word (immediate) *)  (* FIXME: generalize *)
+  | Pld (t: dword_typ) (rd: pgpreg) (rbase: gpreg) (ofs: int)  (**r load double-word (immediate) *)
+  | Plw (t: word_typ) (rd: gpreg) (rbase: gpreg) (ofs: int)    (**r load word (immediate) *)  (* FIXME: generalize *)
+  | Psd (t: dword_typ) (rs: pgpreg) (rbase: gpreg) (ofs: int)  (**r load double-word (immediate) *)
+  | Psw (t: word_typ) (rs: gpreg) (rbase: gpreg) (ofs: int)    (**r store word (immediate) *)  (* FIXME: generalize *)
   (* ALU instructions *)
   | Padd (rd r1: gpreg) (op2: reg_or_imm)        (**r integer addition *)
+  | Paddd (rd r1: pgpreg) (op2: preg_or_imm)     (**r integer double-word addition *)
+  | Pneg (rd r1: gpreg)                          (**r integer negation *)
+  | Pnegd (rd r1: pgpreg)                        (**r integer double-word negation *)
+  | Psbf (rd r1: gpreg) (op2: reg_or_imm)        (**r integer reverse subtraction (i.e., [op2 - r1]) *)
+  | Psbfd (rd r1: pgpreg) (op2: preg_or_imm)     (**r integer double-word reverse subtraction *)
   (* Multiplier-ALU instructions *)
+  | Pmulwdl (rd r1: gpreg) (op2: reg_or_imm)     (**r integer multiplication (32x32 bits, lower half) *)
   (* FPU instructions *)
+  | Pfadd (rd r1 r2: gpreg)                      (**r 32-bit floating-point addition *)
+  | Pfaddd (rd r1 r2: pgpreg)                    (**r 64-bit floating-point addition *)
+  | Pfmul (rd r1 r2: gpreg)                      (**r 32-bit floating-point multiplication *)
+  | Pfmuld (rd r1 r2: pgpreg)                    (**r 64-bit floating-point multiplication *)
+  | Pfneg (rd r1: gpreg)                         (**r 32-bit floating-point negation *)
+  | Pfnegd (rd r1: pgpreg)                       (**r 64-bit floating-point negation *)
+  | Pfsbf (rd r1 r2: gpreg)                      (**r 32-bit floating-point reverse subtraction *)
+  | Pfsbfd (rd r1 r2: pgpreg)                    (**r 64-bit floating-point reverse subtraction *)
 (*
   | Pand: ireg -> ireg -> shift_op -> instruction (**r bitwise and *)
   | Pasr: ireg -> ireg -> ireg -> instruction     (**r arithmetic shift right *)
@@ -484,6 +525,12 @@ Definition eval_reg_or_imm (ri: reg_or_imm) (rs: regset) :=
   | RIreg r => rs#r
   end.
 
+Definition eval_preg_or_imm (pi: preg_or_imm) (rs: regset) :=
+  match pi with
+  | PRIimm n => Vlong n
+  | PRIreg r => rs#r
+  end.
+
 (** Auxiliaries for memory accesses *)
 
 Definition exec_load (chunk: memory_chunk) (addr: val) (r: preg)
@@ -601,17 +648,52 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     | _ => Stuck
     end
   (* Load-store unit instructions *)
-  | Plw rd rbase ofs =>
-    exec_load Mint32 (Val.add rs#rbase (Vint ofs)) rd rs m
-  | Psw rd rbase ofs =>
-    exec_store Mint32 (Val.add rs#rbase (Vint ofs)) rd rs m
+  | Pld t rd rbase ofs =>
+    exec_load (dword_chunk t) (Val.add rs#rbase (Vint ofs)) rd rs m
+  | Plw t rd rbase ofs =>
+    exec_load (word_chunk t) (Val.add rs#rbase (Vint ofs)) rd rs m
+  | Psd t rd rbase ofs =>
+    exec_store (dword_chunk t) (Val.add rs#rbase (Vint ofs)) rd rs m
+  | Psw t rd rbase ofs =>
+    exec_store (word_chunk t) (Val.add rs#rbase (Vint ofs)) rd rs m
   (* ALU instructions *)
   | Padd rd r1 op2 =>
     let op2 := eval_reg_or_imm op2 rs in
     Next (nextinstr (rs#rd <- (Val.add rs#r1 op2))) m
+  | Paddd rd r1 op2 =>
+    let op2 := eval_preg_or_imm op2 rs in
+    Next (nextinstr (rs#rd <- (Val.addl rs#r1 op2))) m
+  | Pmulwdl rd r1 op2 =>
+    let op2 := eval_reg_or_imm op2 rs in
+    Next (nextinstr (rs#rd <- (Val.mul rs#r1 op2))) m
+  | Pneg rd r1 =>
+    Next (nextinstr (rs#rd <- (Val.neg rs#r1))) m
+  | Pnegd rd r1 =>
+    Next (nextinstr (rs#rd <- (Val.negl rs#r1))) m
+  | Psbf rd r1 op2 =>
+    let op2 := eval_reg_or_imm op2 rs in
+    Next (nextinstr (rs#rd <- (Val.sub op2 rs#r1))) m
+  | Psbfd rd r1 op2 =>
+    let op2 := eval_preg_or_imm op2 rs in
+    Next (nextinstr (rs#rd <- (Val.subl op2 rs#r1))) m
   (* Multiplier-ALU instructions *)
   (* FPU instructions *)
-
+  | Pfadd rd r1 r2 =>
+    Next (nextinstr (rs#rd <- (Val.addfs rs#r1 rs#r2))) m
+  | Pfaddd rd r1 r2 =>
+    Next (nextinstr (rs#rd <- (Val.addf rs#r1 rs#r2))) m
+  | Pfmul rd r1 r2 =>
+    Next (nextinstr (rs#rd <- (Val.mulfs rs#r1 rs#r2))) m
+  | Pfmuld rd r1 r2 =>
+    Next (nextinstr (rs#rd <- (Val.mulf rs#r1 rs#r2))) m
+  | Pfneg rd r1 =>
+    Next (nextinstr (rs#rd <- (Val.negfs rs#r1))) m
+  | Pfnegd rd r1 =>
+    Next (nextinstr (rs#rd <- (Val.negf rs#r1))) m
+  | Pfsbf rd r1 r2 =>
+    Next (nextinstr (rs#rd <- (Val.subfs rs#r2 rs#r1))) m
+  | Pfsbfd rd r1 r2 =>
+    Next (nextinstr (rs#rd <- (Val.subf rs#r2 rs#r1))) m
   (* Pseudo-instructions *)
   | Pallocframe sz pos =>
     let (m1, stk) := Mem.alloc m 0 sz in
@@ -626,10 +708,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     | Some v =>
         match rs#SP with
         | Vptr stk ofs =>
-            match Mem.free m stk 0 sz with
-            | None => Stuck
-            | Some m' => Next (nextinstr (rs#SP <- v)) m'
-            end
+          match Mem.free m stk 0 sz with
+          | None => Stuck
+          | Some m' => Next (nextinstr (rs#SP <- v)) m'
+          end
         | _ => Stuck
         end
     end

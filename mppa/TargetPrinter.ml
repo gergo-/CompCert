@@ -3,6 +3,7 @@
 (*              The Compcert verified compiler                         *)
 (*                                                                     *)
 (*          Xavier Leroy, INRIA Paris-Rocquencourt                     *)
+(*          Gergö Barany, INRIA Paris                                  *)
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
@@ -189,6 +190,10 @@ struct
   let reg_or_imm oc = function
     | RIimm n -> fprintf oc "%a" coqint n
     | RIreg r -> gpreg oc r
+
+  let preg_or_imm oc = function
+    | PRIimm n -> fprintf oc "%a" coqint n
+    | PRIreg r -> pgpreg oc r
 
     (*
   let condition_name = function
@@ -563,15 +568,47 @@ struct
     | Pset (rd, rs) ->
       fprintf oc "	set %a = %a\n	;;\n" preg rd gpreg rs; 1
     (* Load-store unit instructions *)
-    | Plw (rd, rbase, ofs) ->
+    | Pld (_typ, rd, rbase, ofs) ->
+      fprintf oc "	ld %a = %a[%a]\n	;;\n" pgpreg rd coqint ofs gpreg rbase; 1
+    | Plw (_typ, rd, rbase, ofs) ->
       fprintf oc "	lw %a = %a[%a]\n	;;\n" gpreg rd coqint ofs gpreg rbase; 1
-    | Psw (rs, rbase, ofs) ->
+    | Psd (_typ, rs, rbase, ofs) ->
+      fprintf oc "	sd %a[%a] = %a\n	;;\n" coqint ofs gpreg rbase pgpreg rs; 1
+    | Psw (_typ, rs, rbase, ofs) ->
       fprintf oc "	sw %a[%a] = %a\n	;;\n" coqint ofs gpreg rbase gpreg rs; 1
     (* ALU instructions *)
     | Padd (rd, r1, op2) ->
       fprintf oc "	add %a = %a, %a\n	;;\n" gpreg rd gpreg r1 reg_or_imm op2; 1
+    | Paddd (rd, r1, op2) ->
+      fprintf oc "	addd %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 preg_or_imm op2; 1
+    | Pneg (rd, r1) ->
+      fprintf oc "	neg %a = %a\n	;;\n" gpreg rd gpreg r1; 1
+    | Pnegd (rd, r1) ->
+      fprintf oc "	negd %a = %a\n	;;\n" pgpreg rd pgpreg r1; 1
+    | Psbf (rd, r1, op2) ->
+      fprintf oc "	sbf %a = %a, %a\n	;;\n" gpreg rd gpreg r1 reg_or_imm op2; 1
+    | Psbfd (rd, r1, op2) ->
+      fprintf oc "	sbfd %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 preg_or_imm op2; 1
     (* Multiplier-ALU instructions *)
+    | Pmulwdl (rd, r1, op2) ->
+      fprintf oc "	mulwdl %a = %a, %a\n	;;\n" gpreg rd gpreg r1 reg_or_imm op2; 1
     (* FPU instructions *)
+    | Pfadd (rd, r1, r2) ->
+      fprintf oc "	fadd %a = %a, %a\n	;;\n" gpreg rd gpreg r1 gpreg r2; 1
+    | Pfaddd (rd, r1, r2) ->
+      fprintf oc "	faddd %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 pgpreg r2; 1
+    | Pfmul (rd, r1, r2) ->
+      fprintf oc "	fmul %a = %a, %a\n	;;\n" gpreg rd gpreg r1 gpreg r2; 1
+    | Pfmuld (rd, r1, r2) ->
+      fprintf oc "	fmuld %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 pgpreg r2; 1
+    | Pfneg (rd, r1) ->
+      fprintf oc "	fneg %a = %a\n	;;\n" gpreg rd gpreg r1; 1
+    | Pfnegd (rd, r1) ->
+      fprintf oc "	fnegd %a = %a\n	;;\n" pgpreg rd pgpreg r1; 1
+    | Pfsbf (rd, r1, r2) ->
+      fprintf oc "	fsbf %a = %a, %a\n	;;\n" gpreg rd gpreg r1 gpreg r2; 1
+    | Pfsbfd (rd, r1, r2) ->
+      fprintf oc "	fsbfd %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 pgpreg r2; 1
     (* Pseudo-instructions *)
     | Pallocframe(sz, ofs) ->
       assert false

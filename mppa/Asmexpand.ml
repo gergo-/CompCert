@@ -4,6 +4,7 @@
 (*                                                                     *)
 (*          Xavier Leroy, INRIA Paris-Rocquencourt                     *)
 (*          Bernhard Schommer, AbsInt Angewandte Informatik GmbH       *)
+(*          Gergö Barany, INRIA Paris                                  *)
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
@@ -422,10 +423,10 @@ let expand_instruction instr =
   match instr with
   | Pallocframe (BinNums.Zpos n as sz, pos) ->
     emit (Padd (GPR12, GPR12, RIimm (BinNums.Zneg n)));
-    emit (Psw (GPR12, GPR12, pos));
+    emit (Psw (Wint, GPR12, GPR12, pos));
     PrintAsmaux.current_function_stacksize := camlint_of_coqint sz
   | Pfreeframe (sz, pos) ->
-    emit (Plw (GPR12, GPR12, pos));
+    emit (Plw (Wint, GPR12, GPR12, pos));
     emit (Padd (GPR12, GPR12, RIimm sz))
   (*
   | Pallocframe (sz, ofs) ->
