@@ -173,20 +173,22 @@ Inductive shift_op : Type :=
   there are no separate instructions for these types. CompCert assumes
   typed memory accesses, so we use these tags to mark the intended data type
   of the access. They are ignored by the assembly printer. *)
-Inductive word_typ: Type := Wint | Wsingle.
+Inductive word_typ: Type := Wint | Wsingle | Wany.
 
 Definition word_chunk wt :=
   match wt with
   | Wint => Mint32
   | Wsingle => Mfloat32
+  | Wany => Many32
   end.
 
-Inductive dword_typ: Type := Dlong | Dfloat.
+Inductive dword_typ: Type := Dlong | Dfloat | Dany.
 
 Definition dword_chunk dt :=
   match dt with
   | Dlong => Mint64
   | Dfloat => Mfloat64
+  | Dany => Many64
   end.
 
 Inductive reg_or_imm: Type :=
@@ -217,7 +219,9 @@ Inductive testcond : Type :=
 
 Inductive instruction : Type :=
   (* Branch control unit instructions *)
+  | Pcall (symb: ident) (sig: signature)         (**r call subroutine *)
   | Pget (rd: gpreg) (rs: preg)                  (**r get system register *)
+  | Picall (r: gpreg) (sig: signature)           (**r indirect call subroutine *)
   | Pret                                         (**r return *)
   | Pset (rd: preg) (rs: gpreg)                  (**r set system register *)
   (* Load-store unit instructions *)
@@ -243,6 +247,9 @@ Inductive instruction : Type :=
   | Pfnegd (rd r1: pgpreg)                       (**r 64-bit floating-point negation *)
   | Pfsbf (rd r1 r2: gpreg)                      (**r 32-bit floating-point reverse subtraction *)
   | Pfsbfd (rd r1 r2: pgpreg)                    (**r 64-bit floating-point reverse subtraction *)
+  (* Synthetic instructions *)
+  | Pcopy (rd r1: gpreg)                         (**r copy word *)
+  | Pcopyd (rd r1: pgpreg)                       (**r copy double-word *)
 (*
   | Pand: ireg -> ireg -> shift_op -> instruction (**r bitwise and *)
   | Pasr: ireg -> ireg -> ireg -> instruction     (**r arithmetic shift right *)
@@ -619,13 +626,13 @@ Definition compare_float32 (rs: regset) (v1 v2: val) :=
 
 (** Execution of a single instruction [i] in initial state
     [rs] and [m].  Return updated state.  For instructions
-    that correspond to actual ARM instructions, the cases are
+    that correspond to actual MPPA instructions, the cases are
     straightforward transliterations of the informal descriptions
-    given in the ARM reference manuals.  For pseudo-instructions,
+    given in the MPPA reference manuals.  For pseudo-instructions,
     refer to the informal descriptions given above.
 
     Note that we set to [Vundef] the registers used as temporaries by
-    the expansions of the pseudo-instructions, so that the ARM code we
+    the expansions of the pseudo-instructions, so that the MPPA code we
     generate cannot use those registers to hold values that must
     survive the execution of the pseudo-instruction.
 *)
@@ -633,12 +640,18 @@ Definition compare_float32 (rs: regset) (v1 v2: val) :=
 Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
   (* Branch control unit instructions *)
+  | Pcall symb sig =>
+    Next (rs#RA <- (Val.add rs#PC Vone)
+            #PC <- (Genv.symbol_address ge symb Ptrofs.zero)) m
   | Pget rd r1 =>
     (* Only allow get from [RA] for now. *)
     match r1 with
     | RA => Next (nextinstr (rs#rd <- (rs#r1))) m
     | _ => Stuck
     end
+  | Picall r sig =>
+    Next (rs#RA <- (Val.add rs#PC Vone)
+            #PC <- (rs#r)) m
   | Pret =>
       Next (rs#PC <- (rs#RA)) m
   | Pset rd r1 =>
@@ -663,9 +676,6 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Paddd rd r1 op2 =>
     let op2 := eval_preg_or_imm op2 rs in
     Next (nextinstr (rs#rd <- (Val.addl rs#r1 op2))) m
-  | Pmulwdl rd r1 op2 =>
-    let op2 := eval_reg_or_imm op2 rs in
-    Next (nextinstr (rs#rd <- (Val.mul rs#r1 op2))) m
   | Pneg rd r1 =>
     Next (nextinstr (rs#rd <- (Val.neg rs#r1))) m
   | Pnegd rd r1 =>
@@ -677,6 +687,9 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     let op2 := eval_preg_or_imm op2 rs in
     Next (nextinstr (rs#rd <- (Val.subl op2 rs#r1))) m
   (* Multiplier-ALU instructions *)
+  | Pmulwdl rd r1 op2 =>
+    let op2 := eval_reg_or_imm op2 rs in
+    Next (nextinstr (rs#rd <- (Val.mul rs#r1 op2))) m
   (* FPU instructions *)
   | Pfadd rd r1 r2 =>
     Next (nextinstr (rs#rd <- (Val.addfs rs#r1 rs#r2))) m
@@ -694,6 +707,11 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     Next (nextinstr (rs#rd <- (Val.subfs rs#r2 rs#r1))) m
   | Pfsbfd rd r1 r2 =>
     Next (nextinstr (rs#rd <- (Val.subf rs#r2 rs#r1))) m
+  (* Synthetic instructions *)
+  | Pcopy rd r1 =>
+    Next (nextinstr (rs#rd <- (rs#r1))) m
+  | Pcopyd rd r1 =>
+    Next (nextinstr (rs#rd <- (rs#r1))) m
   (* Pseudo-instructions *)
   | Pallocframe sz pos =>
     let (m1, stk) := Mem.alloc m 0 sz in

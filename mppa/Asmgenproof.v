@@ -216,6 +216,7 @@ Proof.
   intros; unfold xorimm. auto with labels.
 Qed.
 Hint Resolve xorimm_label: labels.
+*)
 
 Remark indexed_memory_access_label:
   forall mk_instr mk_immed base ofs k,
@@ -243,6 +244,7 @@ Proof.
   destruct ty, (preg_of src); inv H; TailNoLabel.
 Qed.
 
+(*
 Remark transl_cond_label:
   forall cond args k c, transl_cond cond args k = OK c -> tail_nolabel k c.
 Proof.
@@ -257,8 +259,8 @@ Remark transl_op_label:
 Proof.
 Opaque Int.eq.
   unfold transl_op; intros; destruct op; TailNoLabel.
-(*
   destruct (preg_of r); try discriminate; destruct (preg_of m); inv H; TailNoLabel.
+(*
   destruct (thumb tt); TailNoLabel.
   destruct (thumb tt); TailNoLabel.
   eapply tail_nolabel_trans; TailNoLabel.
@@ -291,9 +293,9 @@ Lemma transl_instr_label:
   match i with Mlabel lbl => c = Plabel lbl :: k | _ => tail_nolabel k c end.
 Proof.
   unfold transl_instr; intros; destruct i; TailNoLabel.
-  (*
   eapply loadind_label; eauto.
   eapply storeind_label; eauto.
+  (*
   destruct ep. eapply loadind_label; eauto.
     eapply tail_nolabel_trans. 2: eapply loadind_label; eauto. unfold loadind_int; TailNoLabel.
 *)
@@ -302,8 +304,8 @@ Proof.
   destruct m; monadInv H; eapply transl_memory_access_label; eauto; simpl; auto.
   unfold transl_store, transl_memory_access_word, transl_memory_access_doubleword in H.
   destruct m; monadInv H; eapply transl_memory_access_label; eauto; simpl; auto.
-  (*
   destruct s0; monadInv H; TailNoLabel.
+  (*
   destruct s0; monadInv H; unfold loadind_int; eapply tail_nolabel_trans.
   eapply indexed_memory_access_label; auto with labels. TailNoLabel.
   eapply indexed_memory_access_label; auto with labels. TailNoLabel.
@@ -393,7 +395,7 @@ Proof.
 - intros. monadInv H0.
   destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code x))); inv EQ0. monadInv EQ.
   exists x; exists false; split; auto. repeat constructor.
-(*- exact transf_function_no_overflow.*)
+- exact transf_function_no_overflow.
 Qed.
 
 (** * Proof of semantic preservation *)
@@ -570,13 +572,10 @@ Proof.
   exploit Mem.loadv_extends; eauto. intros [v' [A B]].
   rewrite (sp_val _ _ _ AG) in A.
   left; eapply exec_straight_steps; eauto. intros. simpl in TR.
-  inversion TR.
-  (*
   exploit loadind_correct; eauto with asmgen. intros [rs' [P [Q R]]].
   exists rs'; split. eauto.
   split. eapply agree_set_mreg; eauto with asmgen. congruence.
-  simpl; congruence.
-*)
+  try unfold it1_is_parent; simpl; congruence.
 
 - (* Msetstack *)
   unfold store_stack in H.
@@ -585,12 +584,12 @@ Proof.
   left; eapply exec_straight_steps; eauto.
   rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
   inversion TR.
-(*
   exploit storeind_correct; eauto with asmgen. intros [rs' [P Q]].
   exists rs'; split. eauto.
   split. eapply agree_undef_regs; eauto with asmgen.
-  simpl; intros. rewrite Q; auto with asmgen.
-*)
+  try unfold it1_is_parent; intro H1. inv H1.
+  (*simpl; intros. rewrite Q; auto with asmgen.*)
+
 - (* Mgetparam *)
   assert (f0 = f) by congruence; subst f0.
   unfold load_stack in *.
@@ -676,7 +675,6 @@ Opaque loadind.
   assert (NOOV: list_length_z (fn_code tf) <= Int.max_unsigned).
     eapply transf_function_no_overflow; eauto.
   destruct ros as [rf|fid]; simpl in H; monadInv H5.
-(*
 + (* Indirect call *)
   assert (rs rf = Vptr f' Ptrofs.zero).
     destruct (rs rf); try discriminate.
@@ -710,7 +708,6 @@ Opaque loadind.
   eapply agree_sp_def; eauto.
   simpl. eapply agree_exten; eauto. intros. Simpl.
   Simpl. rewrite <- H2. auto.
-*)
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.

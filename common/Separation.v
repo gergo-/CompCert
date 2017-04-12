@@ -219,6 +219,12 @@ Proof.
   intros. rewrite (sep_swap S). reflexivity.
 Qed.
 
+Lemma sep_swap56:
+  forall P Q R S T U V, massert_eqv (P ** Q ** R ** S ** T ** U ** V) (P ** Q ** R ** S ** U ** T ** V).
+Proof.
+  intros. rewrite (sep_swap T). reflexivity.
+Qed.
+
 Definition sep_swap2 := sep_swap.
 
 Lemma sep_swap3:
@@ -237,6 +243,12 @@ Lemma sep_swap5:
   forall P Q R S T U, massert_eqv (P ** Q ** R ** S ** T ** U) (T ** Q ** R ** S ** P ** U).
 Proof.
   intros. rewrite sep_swap. rewrite (sep_swap4 P). rewrite sep_swap. reflexivity.
+Qed.
+
+Lemma sep_swap6:
+  forall P Q R S T U V, massert_eqv (P ** Q ** R ** S ** T ** U ** V) (U ** Q ** R ** S ** T ** P ** V).
+Proof.
+  intros. rewrite sep_swap. rewrite (sep_swap5 P). rewrite sep_swap. reflexivity.
 Qed.
 
 Lemma sep_drop:

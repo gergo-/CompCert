@@ -524,14 +524,13 @@ Proof.
 *)
 Qed.
 
-(*
 Lemma loadind_int_correct:
-  forall (base: ireg) ofs dst (rs: regset) m v k,
+  forall (base: gpreg) ofs dst (rs: regset) m v k,
   Mem.loadv Mint32 m (Val.offset_ptr rs#base ofs) = Some v ->
   exists rs',
      exec_straight ge fn (loadind_int base ofs dst k) rs m k rs' m
   /\ rs'#dst = v
-  /\ forall r, if_preg r = true -> r <> IR14 -> r <> dst -> rs'#r = rs#r.
+  /\ forall r, if_preg r = true -> (*r <> IR14 ->*) r <> dst -> rs'#r = rs#r.
 Proof.
   intros; unfold loadind_int.
   assert (Val.offset_ptr (rs base) ofs = Val.add (rs base) (Vint (Ptrofs.to_int ofs))).
@@ -543,13 +542,13 @@ Proof.
 Qed.
 
 Lemma loadind_correct:
-  forall (base: ireg) ofs ty dst k c (rs: regset) m v,
+  forall (base: gpreg) ofs ty dst k c (rs: regset) m v,
   loadind base ofs ty dst k = OK c ->
   Mem.loadv (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) = Some v ->
   exists rs',
      exec_straight ge fn c rs m k rs' m
   /\ rs'#(preg_of dst) = v
-  /\ forall r, if_preg r = true -> r <> IR14 -> r <> preg_of dst -> rs'#r = rs#r.
+  /\ forall r, if_preg r = true -> (*r <> IR14 ->*) r <> preg_of dst -> rs'#r = rs#r.
 Proof.
   unfold loadind; intros. 
   assert (Val.offset_ptr (rs base) ofs = Val.add (rs base) (Vint (Ptrofs.to_int ofs))).
@@ -558,6 +557,11 @@ Proof.
 - (* int *)
   apply loadind_int_correct; auto.
 - (* float *)
+  apply indexed_memory_access_correct; intros.
+  econstructor; split.
+  apply exec_straight_one. simpl. unfold exec_load. rewrite H, <- H1, H0. eauto. auto.
+  split; intros; Simpl.
+- (* long *)
   apply indexed_memory_access_correct; intros.
   econstructor; split.
   apply exec_straight_one. simpl. unfold exec_load. rewrite H, <- H1, H0. eauto. auto.
@@ -582,12 +586,12 @@ Qed.
 (** Indexed memory stores. *)
 
 Lemma storeind_correct:
-  forall (base: ireg) ofs ty src k c (rs: regset) m m',
+  forall (base: gpreg) ofs ty src k c (rs: regset) m m',
   storeind src base ofs ty k = OK c ->
   Mem.storev (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) (rs#(preg_of src)) = Some m' ->
   exists rs',
      exec_straight ge fn c rs m k rs' m'
-  /\ forall r, if_preg r = true -> r <> IR14 -> rs'#r = rs#r.
+  /\ forall r, if_preg r = true -> (*r <> IR14 ->*) rs'#r = rs#r.
 Proof.
   unfold storeind; intros.
   assert (DATA: data_preg (preg_of src) = true) by eauto with asmgen.
@@ -603,6 +607,11 @@ Proof.
   apply indexed_memory_access_correct; intros.
   econstructor; split.
   apply exec_straight_one. simpl. unfold exec_store. rewrite H, <- H1, H2, H0 by auto with asmgen; eauto. auto. 
+  intros; Simpl.
+- (* long *)
+  apply indexed_memory_access_correct; intros.
+  econstructor; split.
+  apply exec_straight_one. simpl. unfold exec_store. rewrite H, <- H1, H2, H0 by auto with asmgen; eauto. auto.
   intros; Simpl.
 - (* single *)
   apply indexed_memory_access_correct; intros.
@@ -620,7 +629,6 @@ Proof.
   apply exec_straight_one. simpl. unfold exec_store. rewrite H, <- H1, H2, H0 by auto with asmgen; eauto. auto. 
   intros; Simpl.
 Qed.
-*)
 
 (** Translation of shift immediates *)
 
@@ -1166,12 +1174,12 @@ Proof.
   intros until v; intros TR EV NOCMP.
   unfold transl_op in TR; destruct op; ArgsInv; simpl in EV; inv EV; try (TranslOpSimpl; fail).
 
-(*
   (* Omove *)
   destruct (preg_of res) eqn:RES; try discriminate;
   destruct (preg_of m0) eqn:ARG; inv TR.
   econstructor; split. apply exec_straight_one; simpl; eauto. intuition Simpl.
   econstructor; split. apply exec_straight_one; simpl; eauto. intuition Simpl.
+(*
   (* Ointconst *)
   generalize (loadimm_correct x i k rs m). intros [rs' [A [B C]]].
   exists rs'; auto with asmgen.

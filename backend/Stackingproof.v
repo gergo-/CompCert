@@ -1117,42 +1117,43 @@ Local Opaque b fe.
   (* Dividing up the frame *)
   apply (frame_env_separated b) in SEP. replace (make_env b) with fe in SEP by auto.
   (* Store of parent *)
-  rewrite sep_swap3 in SEP.
+  rewrite sep_swap4 in SEP.
   apply (range_contains Mptr) in SEP; [|tauto].
   exploit (contains_set_stack (fun v' => v' = parent) parent (fun _ => True) m2' Tptr).
   rewrite chunk_of_Tptr; eexact SEP. apply Val.load_result_same; auto.
   clear SEP; intros (m3' & STORE_PARENT & SEP).
-  rewrite sep_swap3 in SEP.
-  (* Store of return address *)
   rewrite sep_swap4 in SEP.
+  (* Store of return address *)
+  rewrite sep_swap5 in SEP.
   apply (range_contains Mptr) in SEP; [|tauto].
   exploit (contains_set_stack (fun v' => v' = ra) ra (fun _ => True) m3' Tptr).
   rewrite chunk_of_Tptr; eexact SEP. apply Val.load_result_same; auto.
   clear SEP; intros (m4' & STORE_RETADDR & SEP).
-  rewrite sep_swap4 in SEP.
-  (* Saving callee-save registers *)
   rewrite sep_swap5 in SEP.
+  (* Saving callee-save registers *)
+  rewrite sep_swap6 in SEP.
   exploit (save_callee_save_correct j' ls ls0 rs); eauto.
   apply agree_regs_inject_incr with j; auto.
   replace (LTL.undef_regs destroyed_at_function_entry (call_regs ls)) with ls1 by auto.
   replace (undef_regs destroyed_at_function_entry rs) with rs1 by auto.
   clear SEP; intros (rs2 & m5' & SAVE_CS & SEP & PERMS & AGREGS').
-  rewrite sep_swap5 in SEP.
+  rewrite sep_swap6 in SEP.
   (* Materializing the Local and Outgoing locations *)
   exploit (initial_locations j'). eexact SEP. tauto. 
   instantiate (1 := Local). instantiate (1 := ls1). 
   intros; rewrite LS1. rewrite LTL_undef_regs_slot. reflexivity.
   clear SEP; intros SEP.
-  rewrite sep_swap in SEP.
+  rewrite sep_swap3 in SEP.
   exploit (initial_locations j'). eexact SEP. tauto. 
   instantiate (1 := Outgoing). instantiate (1 := ls1). 
   intros; rewrite LS1. rewrite LTL_undef_regs_slot. reflexivity.
   clear SEP; intros SEP.
-  rewrite sep_swap in SEP.
+  rewrite sep_swap3 in SEP.
   (* Now we frame this *)
   assert (SEPFINAL: m5' |= frame_contents j' sp' ls1 ls0 parent ra ** minjection j' m2 ** globalenv_inject ge j' ** P).
   { eapply frame_mconj. eexact SEPCONJ.
     rewrite chunk_of_Tptr in SEP.  
+    rewrite sep_swap in SEP. apply sep_drop in SEP.
     unfold frame_contents_1; rewrite ! sep_assoc. exact SEP.
     assert (forall ofs k p, Mem.perm m2' sp' ofs k p -> Mem.perm m5' sp' ofs k p).
     { intros. apply PERMS. 

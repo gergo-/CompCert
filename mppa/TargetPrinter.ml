@@ -561,8 +561,12 @@ struct
 
   let print_instruction oc = function
     (* Branch control unit instructions *)
+    | Pcall (symb, _sig) ->
+      fprintf oc "	call %a\n	;;\n" symbol symb; 1
     | Pget (rd, rs) ->
       fprintf oc "	get %a = %a\n	;;\n" gpreg rd preg rs; 1
+    | Picall (r, _sig) ->
+      fprintf oc "	icall %a\n	;;\n" gpreg r; 1
     | Pret ->
       fprintf oc "	ret\n	;;\n"; 1
     | Pset (rd, rs) ->
@@ -609,6 +613,11 @@ struct
       fprintf oc "	fsbf %a = %a, %a\n	;;\n" gpreg rd gpreg r1 gpreg r2; 1
     | Pfsbfd (rd, r1, r2) ->
       fprintf oc "	fsbfd %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 pgpreg r2; 1
+    (* Synthetic instructions *)
+    | Pcopy (rd, r1) ->
+      fprintf oc "	copy %a = %a\n	;;\n" gpreg rd gpreg r1; 1
+    | Pcopyd (rd, r1) ->
+      fprintf oc "	copyd %a = %a\n	;;\n" pgpreg rd pgpreg r1; 1
     (* Pseudo-instructions *)
     | Pallocframe(sz, ofs) ->
       assert false

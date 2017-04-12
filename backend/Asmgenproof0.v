@@ -622,13 +622,10 @@ Opaque transl_instr.
     eapply transl_instr_tail; eauto. }
   exploit is_tail_code_tail. eexact TL3. intros [ofs CT].
   exists (Ptrofs.repr ofs). red; intros.
-  (* FIXME: dirty hack as long as we don't generate code for [Mcall] *)
-  inversion EQ0.
-  (*
+  try unfold it1_is_parent in EQ.
   rewrite Ptrofs.unsigned_repr. congruence.
   exploit code_tail_bounds_1; eauto.
   apply transf_function_len in TF. omega.
-*)
 + exists Ptrofs.zero; red; intros. congruence.
 Qed.
 
