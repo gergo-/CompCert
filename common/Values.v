@@ -2084,6 +2084,16 @@ Proof.
   intros. inv H; simpl in H1; try discriminate; inv H0; simpl in H1; try discriminate; simpl; auto.
 Qed.
 
+Lemma cmpl_bool_inject:
+  forall c v1 v2 v1' v2' b,
+  inject f v1 v1' ->
+  inject f v2 v2' ->
+  Val.cmpl_bool c v1 v2 = Some b ->
+  Val.cmpl_bool c v1' v2' = Some b.
+Proof.
+  intros. inv H; simpl in H1; try discriminate; inv H0; simpl in H1; try discriminate; simpl; auto.
+Qed.
+
 Variable (valid_ptr1 valid_ptr2 : block -> Z -> bool).
 
 Let weak_valid_ptr1 b ofs := valid_ptr1 b ofs || valid_ptr1 b (ofs - 1).

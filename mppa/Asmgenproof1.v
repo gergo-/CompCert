@@ -1161,17 +1161,44 @@ Ltac TranslOpSimpl :=
   [ apply exec_straight_one; [simpl; eauto | reflexivity ]
   | split; [(*try rewrite transl_shift_correct;*) repeat Simpl | intros; repeat Simpl] ].
 
-Lemma transl_op_correct_same:
-  forall op args res k c (rs: regset) m v,
+Lemma transl_op_correct_same_cmp:
+  forall op args res k c (rs: regset) m v cmp,
   transl_op op args res k = OK c ->
   eval_operation ge rs#SP op (map rs (map preg_of args)) m = Some v ->
-  match op with Ocmp _ => False | Oaddrstack _ => False | _ => True end ->
+  op = Ocmp cmp ->
   exists rs',
      exec_straight ge fn c rs m k rs' m
   /\ rs'#(preg_of res) = v
   /\ forall r, data_preg r = true -> r <> preg_of res -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r.
 Proof.
-  intros until v; intros TR EV NOCMP.
+  intros until cmp; intros TR EV CMP.
+  unfold transl_op in TR; destruct op; try discriminate. inv CMP.
+  unfold transl_cond in TR.
+
+  Ltac negated_float_case :=
+    try unfold compare_float, compare_single, Val.cmpf_bool, Val.cmpfs_bool;
+    try rewrite (Float.cmp_swap Cle); try rewrite (Float.cmp_swap Cgt);
+    try rewrite (Float32.cmp_swap Cle); try rewrite (Float32.cmp_swap Cgt);
+    reflexivity.
+
+  destruct cmp; destruct c0; try discriminate;
+    ArgsInv; TranslOpSimpl; inv EV;
+    try reflexivity;  (* integer case *)
+    try destruct (rs x0); try destruct (rs x1); try reflexivity;  (* non-negated float case *)
+    negated_float_case.
+Qed.
+
+Lemma transl_op_correct_same:
+  forall op args res k c (rs: regset) m v,
+  transl_op op args res k = OK c ->
+  eval_operation ge rs#SP op (map rs (map preg_of args)) m = Some v ->
+  match op with Oaddrstack _ => False | _ => True end ->
+  exists rs',
+     exec_straight ge fn c rs m k rs' m
+  /\ rs'#(preg_of res) = v
+  /\ forall r, data_preg r = true -> r <> preg_of res -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r.
+Proof.
+  intros until v; intros TR EV NOADDRSTACK.
   unfold transl_op in TR; destruct op; ArgsInv; simpl in EV; inv EV; try (TranslOpSimpl; fail).
 
   (* Omove *)
@@ -1309,9 +1336,9 @@ Transparent destroyed_by_op.
   (* singleofintu *)
   econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
   intuition Simpl.
-  (* Ocmp *)
-  contradiction.
 *)
+  (* Ocmp *)
+  eapply transl_op_correct_same_cmp; destruct c0; eauto.
 Qed.
 
 Lemma transl_op_correct:
@@ -1340,16 +1367,6 @@ Proof.
   exists rs'; split. auto. split.
   rewrite RES; inv H0. destruct (rs IR13); simpl; auto. rewrite Ptrofs.of_int_to_int; auto.
   intros; apply OTH; eauto with asmgen.
-*)
-- (* Ocmp *)
-  clear SAME. simpl in H. monadInv H. (* simpl in H0. inv H0.
-  rewrite (ireg_of_eq _ _ EQ).
-  exploit transl_cond_correct; eauto. instantiate (1 := rs). instantiate (1 := m). intros [rs1 [A [B C]]].
-  econstructor; split.
-  eapply exec_straight_trans. eexact A. apply exec_straight_one. simpl; eauto. auto.
-  split; intros; Simpl.
-  destruct (eval_condition c0 rs ## (preg_of ## args) m) as [b|]; simpl; auto.
-  destruct B as [B1 B2]; rewrite B1. destruct b; auto.
 *)
 Qed.
 

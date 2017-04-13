@@ -255,123 +255,92 @@ Definition transl_shift (s: shift) (r: ireg) : shift_op :=
 
 (** Translation of a condition.  Prepends to [k] the instructions
   that evaluate the condition and leave its boolean result in one of
-  the bits of the condition register.  The bit in question is
-  determined by the [crbit_for_cond] function. *)
+  the destination register. *)
 
-(*
+Definition cmp_itest (cmp: comparison) :=
+  match cmp with
+  | Ceq => ITeq
+  | Cne => ITne
+  | Clt => ITlt
+  | Cle => ITle
+  | Cgt => ITgt
+  | Cge => ITge
+  end.
+
+Definition cmp_uitest (cmp: comparison) :=
+  match cmp with
+  | Ceq => ITequ
+  | Cne => ITneu
+  | Clt => ITltu
+  | Cle => ITleu
+  | Cgt => ITgtu
+  | Cge => ITgeu
+  end.
+
+Definition transl_ftest {Res Reg: Type}
+           (f: ftest -> Res -> Reg -> Reg -> instruction) (cmp: comparison) (r: Res) (r1 r2: Reg) :=
+  match cmp with
+  | Ceq => f FToeq r r1 r2
+  | Cne => f FTone r r1 r2
+  | Clt => f FTolt r r1 r2
+  | Cle => f FToge r r2 r1
+  | Cgt => f FTolt r r2 r1
+  | Cge => f FToge r r1 r2
+  end.
+
+Definition transl_notftest {Res Reg: Type}
+           (f: ftest -> Res -> Reg -> Reg -> instruction) (cmp: comparison) (r: Res) (r1 r2: Reg) :=
+  match cmp with
+  | Ceq => f FTune r r1 r2
+  | Cne => f FTueq r r1 r2
+  | Clt => f FTuge r r1 r2
+  | Cle => f FTult r r2 r1
+  | Cgt => f FTuge r r2 r1
+  | Cge => f FTult r r1 r2
+  end.
+
 Definition transl_cond
-              (cond: condition) (args: list mreg) (k: code) :=
+              (cond: condition) (args: list mreg) (res: mreg) (k: code) :=
   match cond, args with
   | Ccomp c, a1 :: a2 :: nil =>
-      do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pcmp r1(SOreg r2) :: k)
-  | Ccompu c, a1 :: a2 :: nil =>
-      do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pcmp r1 (SOreg r2) :: k)
-  | Ccompshift c s, a1 :: a2 :: nil =>
-      do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pcmp r1 (transl_shift s r2) :: k)
-  | Ccompushift c s, a1 :: a2 :: nil =>
-      do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pcmp r1 (transl_shift s r2) :: k)
+      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
+      OK (Pcomp (cmp_itest c) r r1 (RIreg r2) :: k)
   | Ccompimm c n, a1 :: nil =>
-      do r1 <- gpreg_of a1;
-      OK (if is_immed_arith n then
-            Pcmp r1 (SOimm n) :: k
-          else
-            loadimm IR14 n (Pcmp r1 (SOreg IR14) :: k))
+      do r <- gpreg_of res; do r1 <- gpreg_of a1;
+      OK (Pcomp (cmp_itest c) r r1 (RIimm n) :: k)
+  | Ccompu c, a1 :: a2 :: nil =>
+      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
+      OK (Pcomp (cmp_uitest c) r r1 (RIreg r2) :: k)
   | Ccompuimm c n, a1 :: nil =>
-      do r1 <- gpreg_of a1;
-      OK (if is_immed_arith n then
-            Pcmp r1 (SOimm n) :: k
-          else
-            loadimm IR14 n (Pcmp r1 (SOreg IR14) :: k))
-  | Ccompf cmp, a1 :: a2 :: nil =>
-      do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pfcmpd r1 r2 :: k)
-  | Cnotcompf cmp, a1 :: a2 :: nil =>
-      do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pfcmpd r1 r2 :: k)
-  | Ccompfzero cmp, a1 :: nil =>
-      do r1 <- gpreg_of a1;
-      OK (Pfcmpzd r1 :: k)
-  | Cnotcompfzero cmp, a1 :: nil =>
-      do r1 <- gpreg_of a1;
-      OK (Pfcmpzd r1 :: k)
-  | Ccompfs cmp, a1 :: a2 :: nil =>
-      do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pfcmps r1 r2 :: k)
-  | Cnotcompfs cmp, a1 :: a2 :: nil =>
-      do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pfcmps r1 r2 :: k)
-  | Ccompfszero cmp, a1 :: nil =>
-      do r1 <- gpreg_of a1;
-      OK (Pfcmpzs r1 :: k)
-  | Cnotcompfszero cmp, a1 :: nil =>
-      do r1 <- gpreg_of a1;
-      OK (Pfcmpzs r1 :: k)
+      do r <- gpreg_of res; do r1 <- gpreg_of a1;
+      OK (Pcomp (cmp_uitest c) r r1 (RIimm n) :: k)
+  | Ccompl c, a1 :: a2 :: nil =>
+      do r <- gpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
+      OK (Pcompdl (cmp_itest c) r r1 (PRIreg r2) :: k)
+  | Ccomplimm c n, a1 :: nil =>
+      do r <- gpreg_of res; do r1 <- pgpreg_of a1;
+      OK (Pcompdl (cmp_itest c) r r1 (PRIimm n) :: k)
+  | Ccomplu c, a1 :: a2 :: nil =>
+      do r <- gpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
+      OK (Pcompdl (cmp_uitest c) r r1 (PRIreg r2) :: k)
+  | Ccompluimm c n, a1 :: nil =>
+      do r <- gpreg_of res; do r1 <- pgpreg_of a1;
+      OK (Pcompdl (cmp_uitest c) r r1 (PRIimm n) :: k)
+  | Ccompf c, a1 :: a2 :: nil =>
+      do r <- gpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
+      OK (transl_ftest Pfcompdl c r r1 r2 :: k)
+  | Cnotcompf c, a1 :: a2 :: nil =>
+      do r <- gpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
+      OK (transl_notftest Pfcompdl c r r1 r2 :: k)
+  | Ccompfs c, a1 :: a2 :: nil =>
+      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
+      OK (transl_ftest Pfcomp c r r1 r2 :: k)
+  | Cnotcompfs c, a1 :: a2 :: nil =>
+      do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
+      OK (transl_notftest Pfcomp c r r1 r2 :: k)
   | _, _ =>
       Error(msg "Asmgen.transl_cond")
   end.
-
-Definition cond_for_signed_cmp (cmp: comparison) :=
-  match cmp with
-  | Ceq => TCeq
-  | Cne => TCne
-  | Clt => TClt
-  | Cle => TCle
-  | Cgt => TCgt
-  | Cge => TCge
-  end.
-
-Definition cond_for_unsigned_cmp (cmp: comparison) :=
-  match cmp with
-  | Ceq => TCeq
-  | Cne => TCne
-  | Clt => TClo
-  | Cle => TCls
-  | Cgt => TChi
-  | Cge => TChs
-  end.
-
-Definition cond_for_float_cmp (cmp: comparison) :=
-  match cmp with
-  | Ceq => TCeq
-  | Cne => TCne
-  | Clt => TCmi
-  | Cle => TCls
-  | Cgt => TCgt
-  | Cge => TCge
-  end.
-
-Definition cond_for_float_not_cmp (cmp: comparison) :=
-  match cmp with
-  | Ceq => TCne
-  | Cne => TCeq
-  | Clt => TCpl
-  | Cle => TChi
-  | Cgt => TCle
-  | Cge => TClt
-  end.
-
-Definition cond_for_cond (cond: condition) :=
-  match cond with
-  | Ccomp cmp => cond_for_signed_cmp cmp
-  | Ccompu cmp => cond_for_unsigned_cmp cmp
-  | Ccompshift cmp s => cond_for_signed_cmp cmp
-  | Ccompushift cmp s => cond_for_unsigned_cmp cmp
-  | Ccompimm cmp n => cond_for_signed_cmp cmp
-  | Ccompuimm cmp n => cond_for_unsigned_cmp cmp
-  | Ccompf cmp => cond_for_float_cmp cmp
-  | Cnotcompf cmp => cond_for_float_not_cmp cmp
-  | Ccompfzero cmp => cond_for_float_cmp cmp
-  | Cnotcompfzero cmp => cond_for_float_not_cmp cmp
-  | Ccompfs cmp => cond_for_float_cmp cmp
-  | Cnotcompfs cmp => cond_for_float_not_cmp cmp
-  | Ccompfszero cmp => cond_for_float_cmp cmp
-  | Cnotcompfszero cmp => cond_for_float_not_cmp cmp
-  end.
-*)
 
 (** Translation of the arithmetic operation [r <- op(args)].
   The corresponding instructions are prepended to [k]. *)
@@ -596,11 +565,9 @@ Definition transl_op
   | Osingleofintu, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
       OK (Pfuitos r r1 :: k)
-  | Ocmp cmp, _ =>
-      do r <- gpreg_of res;
-      transl_cond cmp args
-        (Pmovite (cond_for_cond cmp) r (SOimm Int.one) (SOimm Int.zero) :: k)
 *)
+  | Ocmp cmp, _ =>
+      transl_cond cmp args res k
   | _, _ =>
       Error(msg "Asmgen.transl_op")
   end.

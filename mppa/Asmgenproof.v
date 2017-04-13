@@ -244,15 +244,11 @@ Proof.
   destruct ty, (preg_of src); inv H; TailNoLabel.
 Qed.
 
-(*
 Remark transl_cond_label:
-  forall cond args k c, transl_cond cond args k = OK c -> tail_nolabel k c.
+  forall cond args r k c, transl_cond cond args r k = OK c -> tail_nolabel k c.
 Proof.
-  unfold transl_cond; intros; destruct cond; TailNoLabel.
-  destruct (is_immed_arith i). TailNoLabel. eapply tail_nolabel_trans; TailNoLabel.
-  destruct (is_immed_arith i). TailNoLabel. eapply tail_nolabel_trans; TailNoLabel.
+  unfold transl_cond; intros; destruct cond; destruct c0; TailNoLabel.
 Qed.
-*)
 
 Remark transl_op_label:
   forall op args r k c, transl_op op args r k = OK c -> tail_nolabel k c.
@@ -260,12 +256,7 @@ Proof.
 Opaque Int.eq.
   unfold transl_op; intros; destruct op; TailNoLabel.
   destruct (preg_of r); try discriminate; destruct (preg_of m); inv H; TailNoLabel.
-(*
-  destruct (thumb tt); TailNoLabel.
-  destruct (thumb tt); TailNoLabel.
-  eapply tail_nolabel_trans; TailNoLabel.
-  eapply tail_nolabel_trans. eapply transl_cond_label; eauto. TailNoLabel.
-*)
+  eapply transl_cond_label; eauto.
 Qed.
 
 Remark transl_memory_access_label:

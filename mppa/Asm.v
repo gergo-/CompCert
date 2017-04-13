@@ -199,23 +199,34 @@ Inductive preg_or_imm: Type :=
   | PRIimm (i: int64)
   | PRIreg (r: pgpreg).
 
-Inductive testcond : Type :=
-  | TCne:   testcond    (**r not equal *)
-  | TCeq:   testcond    (**r equal *)
-  | TClt:   testcond    (**r signed less than *)
-  | TCge:   testcond    (**r signed greater or equal *)
-  | TCle:   testcond    (**r signed less than or equal *)
-  | TCgt:   testcond    (**r signed greater *)
-  | TCltu:  testcond    (**r unsigned less than *)
-  | TCgeu:  testcond    (**r unsigned greater or equal *)
-  | TCleu:  testcond    (**r unsigned less than or equal *)
-  | TCgtu:  testcond    (**r unsigned greater *)
-  (* The following are not used for the moment. *)
-  | TCall:  testcond    (**r all bits set in mask *)
-  | TCnall: testcond    (**r not all bits set in mask *)
-  | TCany:  testcond    (**r any bits set in mask *)
-  | TCnone: testcond    (**r not any bits set in mask *)
-  .
+Inductive itest: Type :=
+  | ITne                (**r not equal *)
+  | ITeq                (**r equal *)
+  | ITlt                (**r signed less than *)
+  | ITge                (**r signed greater or equal *)
+  | ITle                (**r signed less than or equal *)
+  | ITgt                (**r signed greater *)
+  | ITneu               (**r unsigned not equal *)
+  | ITequ               (**r unsigned equal *)
+  | ITltu               (**r unsigned less than *)
+  | ITgeu               (**r unsigned greater or equal *)
+  | ITleu               (**r unsigned less than or equal *)
+  | ITgtu               (**r unsigned greater *)
+  (* The following are not used yet. *)
+  | ITall               (**r all bits set in mask *)
+  | ITnall              (**r not all bits set in mask *)
+  | ITany               (**r any bits set in mask *)
+  | ITnone.             (**r not any bits set in mask *)
+
+Inductive ftest: Type :=
+  | FTone               (**r ordered and not equal *)
+  | FTueq               (**r unordered or equal *)
+  | FToeq               (**r ordered and equal *)
+  | FTune               (**r unordered or not equal *)
+  | FTolt               (**r ordered and less than *)
+  | FTuge               (**r unordered or greater than or equal *)
+  | FToge               (**r ordered and greater than or equal *)
+  | FTult.              (**r unordered or less than *)
 
 Inductive instruction : Type :=
   (* Branch control unit instructions *)
@@ -232,6 +243,8 @@ Inductive instruction : Type :=
   (* ALU instructions *)
   | Padd (rd r1: gpreg) (op2: reg_or_imm)        (**r integer addition *)
   | Paddd (rd r1: pgpreg) (op2: preg_or_imm)     (**r integer double-word addition *)
+  | Pcomp (t: itest) (rd: gpreg) (r1: gpreg) (r2: reg_or_imm)     (**r integer comparison *)
+  | Pcompdl (t: itest) (rd: gpreg) (r1: pgpreg) (r2: preg_or_imm)   (**r integer double-word comparison *)
   | Pneg (rd r1: gpreg)                          (**r integer negation *)
   | Pnegd (rd r1: pgpreg)                        (**r integer double-word negation *)
   | Psbf (rd r1: gpreg) (op2: reg_or_imm)        (**r integer reverse subtraction (i.e., [op2 - r1]) *)
@@ -241,6 +254,8 @@ Inductive instruction : Type :=
   (* FPU instructions *)
   | Pfadd (rd r1 r2: gpreg)                      (**r 32-bit floating-point addition *)
   | Pfaddd (rd r1 r2: pgpreg)                    (**r 64-bit floating-point addition *)
+  | Pfcomp (t: ftest) (rd: gpreg) (r1 r2: gpreg)     (**r 32-bit floating-point comparison *)
+  | Pfcompdl (t: ftest) (rd: gpreg) (r1 r2: pgpreg)  (**r 64-bit floating-point comparison *)
   | Pfmul (rd r1 r2: gpreg)                      (**r 32-bit floating-point multiplication *)
   | Pfmuld (rd r1 r2: pgpreg)                    (**r 64-bit floating-point multiplication *)
   | Pfneg (rd r1: gpreg)                         (**r 32-bit floating-point negation *)
@@ -556,73 +571,77 @@ Definition exec_store (chunk: memory_chunk) (addr: val) (r: preg)
 
 (** Comparisons. *)
 
-(** On MPPA, there is no dedicated condition code register. Instead, a
-  comparison sets condition bits in a specified register. Compute all those bits
-  here and combine them into a bit mask. Unlike on other architectures, this
-  does not modify the register set. *)
+Definition compare_int (t: itest) (v1 v2: val) (m: mem): val :=
+  match t with
+  | ITne  => Val.cmp Cne v1 v2
+  | ITeq  => Val.cmp Ceq v1 v2
+  | ITlt  => Val.cmp Clt v1 v2
+  | ITge  => Val.cmp Cge v1 v2
+  | ITle  => Val.cmp Cle v1 v2
+  | ITgt  => Val.cmp Cgt v1 v2
+  | ITneu => Val.cmpu (Mem.valid_pointer m) Cne v1 v2
+  | ITequ => Val.cmpu (Mem.valid_pointer m) Ceq v1 v2
+  | ITltu => Val.cmpu (Mem.valid_pointer m) Clt v1 v2
+  | ITgeu => Val.cmpu (Mem.valid_pointer m) Cge v1 v2
+  | ITleu => Val.cmpu (Mem.valid_pointer m) Cle v1 v2
+  | ITgtu => Val.cmpu (Mem.valid_pointer m) Cgt v1 v2
+  | ITall
+  | ITnall
+  | ITany
+  | ITnone => Vundef
+  end.
 
-Definition shift_bit (b: val) (count: Z): val :=
-  Val.shl b (Vint (Int.repr count)).
+Definition compare_long (t: itest) (v1 v2: val) (m: mem): val :=
+  match t with
+  | ITne  => Val.of_optbool (Val.cmpl_bool Cne v1 v2)
+  | ITeq  => Val.of_optbool (Val.cmpl_bool Ceq v1 v2)
+  | ITlt  => Val.of_optbool (Val.cmpl_bool Clt v1 v2)
+  | ITge  => Val.of_optbool (Val.cmpl_bool Cge v1 v2)
+  | ITle  => Val.of_optbool (Val.cmpl_bool Cle v1 v2)
+  | ITgt  => Val.of_optbool (Val.cmpl_bool Cgt v1 v2)
+  | ITneu => Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Cne v1 v2)
+  | ITequ => Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Ceq v1 v2)
+  | ITltu => Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Clt v1 v2)
+  | ITgeu => Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Cge v1 v2)
+  | ITleu => Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Cle v1 v2)
+  | ITgtu => Val.of_optbool (Val.cmplu_bool (Mem.valid_pointer m) Cgt v1 v2)
+  | ITall
+  | ITnall
+  | ITany
+  | ITnone => Vundef
+  end.
 
-Definition compare_int (v1 v2: val) (m: mem) :=
-  let cne  := Val.cmp Cne v1 v2 in
-  let ceq  := Val.cmp Ceq v1 v2 in
-  let clt  := Val.cmp Clt v1 v2 in
-  let cge  := Val.cmp Cge v1 v2 in
-  let cle  := Val.cmp Cle v1 v2 in
-  let cgt  := Val.cmp Cgt v1 v2 in
-  let cltu := Val.cmpu (Mem.valid_pointer m) Clt v1 v2 in
-  let cgeu := Val.cmpu (Mem.valid_pointer m) Cge v1 v2 in
-  let cleu := Val.cmpu (Mem.valid_pointer m) Cle v1 v2 in
-  let cgtu := Val.cmpu (Mem.valid_pointer m) Cgt v1 v2 in
-  (* TODO: mask bits *)
-  fold_left Val.or
-            (shift_bit cne  0 ::
-             shift_bit ceq  1 ::
-             shift_bit clt  2 ::
-             shift_bit cge  3 ::
-             shift_bit cle  4 ::
-             shift_bit cgt  5 ::
-             shift_bit cltu 6 ::
-             shift_bit cgeu 7 ::
-             shift_bit cleu 8 ::
-             shift_bit cgtu 9 :: nil)
-            Vzero.
-
-Definition compare_float (v1 v2: val) :=
-  (* FIXME: add the possibly unordered variants. This seems to require direct
-     use of [Fappli_IEEE.Bcompare]. *)
-  let one := Val.cmpf Cne v1 v2 in   (** ordered and not equal *)
-  let oeq := Val.cmpf Ceq v1 v2 in   (** ordered and equal *)
-  let olt := Val.cmpf Clt v1 v2 in   (** ordered and less than *)
-  let oge := Val.cmpf Cge v1 v2 in   (** ordered and greater than or equal *)
-  fold_left Val.or
-            (shift_bit one 0 ::
-             shift_bit oeq 2 ::
-             shift_bit olt 4 ::
-             shift_bit oge 6 :: nil)
-            Vzero.
-
-Definition compare_float32 (rs: regset) (v1 v2: val) :=
-  (* FIXME: add the possibly unordered variants. This seems to require direct
-     use of [Fappli_IEEE.Bcompare]. *)
+Definition compare_single (t: ftest) (v1 v2: val): val :=
   match v1, v2 with
   | Vsingle f1, Vsingle f2 =>
-    let one := Val.of_bool (Float32.cmp Cne f1 f2) in   (** ordered and not equal *)
-    let oeq := Val.of_bool (Float32.cmp Ceq f1 f2) in   (** ordered and equal *)
-    let olt := Val.of_bool (Float32.cmp Clt f1 f2) in   (** ordered and less than *)
-    let oge := Val.of_bool (Float32.cmp Cge f1 f2) in   (** ordered and greater than or equal *)
-    fold_left Val.or
-              (shift_bit one 0 ::
-               shift_bit oeq 2 ::
-               shift_bit olt 4 ::
-               shift_bit oge 6 :: nil)
-              Vzero
+    match t with
+    | FTone => Val.of_bool (Float32.cmp Cne f1 f2)
+    | FTueq => Val.of_bool (negb (Float32.cmp Cne f1 f2))
+    | FToeq => Val.of_bool (Float32.cmp Ceq f1 f2)
+    | FTune => Val.of_bool (negb (Float32.cmp Ceq f1 f2))
+    | FTolt => Val.of_bool (Float32.cmp Clt f1 f2)
+    | FTuge => Val.of_bool (negb (Float32.cmp Clt f1 f2))
+    | FToge => Val.of_bool (Float32.cmp Cge f1 f2)
+    | FTult => Val.of_bool (negb (Float32.cmp Cge f1 f2))
+    end
   | _, _ => Vundef
   end.
 
-(** Testing a condition *)
-(* TODO *)
+Definition compare_float (t: ftest) (v1 v2: val): val :=
+  match v1, v2 with
+  | Vfloat f1, Vfloat f2 =>
+    match t with
+    | FTone => Val.of_bool (Float.cmp Cne f1 f2)
+    | FTueq => Val.of_bool (negb (Float.cmp Cne f1 f2))
+    | FToeq => Val.of_bool (Float.cmp Ceq f1 f2)
+    | FTune => Val.of_bool (negb (Float.cmp Ceq f1 f2))
+    | FTolt => Val.of_bool (Float.cmp Clt f1 f2)
+    | FTuge => Val.of_bool (negb (Float.cmp Clt f1 f2))
+    | FToge => Val.of_bool (Float.cmp Cge f1 f2)
+    | FTult => Val.of_bool (negb (Float.cmp Cge f1 f2))
+    end
+  | _, _ => Vundef
+  end.
 
 (** Execution of a single instruction [i] in initial state
     [rs] and [m].  Return updated state.  For instructions
@@ -676,6 +695,12 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Paddd rd r1 op2 =>
     let op2 := eval_preg_or_imm op2 rs in
     Next (nextinstr (rs#rd <- (Val.addl rs#r1 op2))) m
+  | Pcomp t rd r1 op2 =>
+    let op2 := eval_reg_or_imm op2 rs in
+    Next (nextinstr (rs#rd <- (compare_int t rs#r1 op2 m))) m
+  | Pcompdl t rd r1 op2 =>
+    let op2 := eval_preg_or_imm op2 rs in
+    Next (nextinstr (rs#rd <- (compare_long t rs#r1 op2 m))) m
   | Pneg rd r1 =>
     Next (nextinstr (rs#rd <- (Val.neg rs#r1))) m
   | Pnegd rd r1 =>
@@ -695,6 +720,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     Next (nextinstr (rs#rd <- (Val.addfs rs#r1 rs#r2))) m
   | Pfaddd rd r1 r2 =>
     Next (nextinstr (rs#rd <- (Val.addf rs#r1 rs#r2))) m
+  | Pfcomp t rd r1 r2 =>
+    Next (nextinstr (rs#rd <- (compare_single t rs#r1 rs#r2))) m
+  | Pfcompdl t rd r1 r2 =>
+    Next (nextinstr (rs#rd <- (compare_float t rs#r1 rs#r2))) m
   | Pfmul rd r1 r2 =>
     Next (nextinstr (rs#rd <- (Val.mulfs rs#r1 rs#r2))) m
   | Pfmuld rd r1 r2 =>

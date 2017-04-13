@@ -195,6 +195,36 @@ struct
     | PRIimm n -> fprintf oc "%a" coqint n
     | PRIreg r -> pgpreg oc r
 
+  let icond_name = function
+    | ITne | ITneu -> "ne"
+    | ITeq | ITequ -> "eq"
+    | ITlt   -> "lt"
+    | ITge   -> "ge"
+    | ITle   -> "le"
+    | ITgt   -> "gt"
+    | ITltu  -> "ltu"
+    | ITgeu  -> "geu"
+    | ITleu  -> "leu"
+    | ITgtu  -> "gtu"
+    | ITall  -> "all"
+    | ITnall -> "nall"
+    | ITany  -> "any"
+    | ITnone -> "none"
+
+  let icond oc c = fprintf oc "%s" (icond_name c)
+
+  let fcond_name = function
+    | FTone -> "one"
+    | FTueq -> "ueq"
+    | FToeq -> "oeq"
+    | FTune -> "une"
+    | FTolt -> "olt"
+    | FTuge -> "uge"
+    | FToge -> "oge"
+    | FTult -> "ult"
+
+  let fcond oc c = fprintf oc "%s" (fcond_name c)
+
     (*
   let condition_name = function
     | TCeq -> "eq"
@@ -585,6 +615,10 @@ struct
       fprintf oc "	add %a = %a, %a\n	;;\n" gpreg rd gpreg r1 reg_or_imm op2; 1
     | Paddd (rd, r1, op2) ->
       fprintf oc "	addd %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 preg_or_imm op2; 1
+    | Pcomp (c, rd, r1, op2) ->
+      fprintf oc "	comp.%a %a = %a, %a\n	;;\n" icond c gpreg rd gpreg r1 reg_or_imm op2; 1
+    | Pcompdl (c, rd, r1, op2) ->
+      fprintf oc "	compdl.%a %a = %a, %a\n	;;\n" icond c gpreg rd pgpreg r1 preg_or_imm op2; 1
     | Pneg (rd, r1) ->
       fprintf oc "	neg %a = %a\n	;;\n" gpreg rd gpreg r1; 1
     | Pnegd (rd, r1) ->
@@ -601,6 +635,10 @@ struct
       fprintf oc "	fadd %a = %a, %a\n	;;\n" gpreg rd gpreg r1 gpreg r2; 1
     | Pfaddd (rd, r1, r2) ->
       fprintf oc "	faddd %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 pgpreg r2; 1
+    | Pfcomp (c, rd, r1, r2) ->
+      fprintf oc "	fcomp.%a %a = %a, %a\n	;;\n" fcond c gpreg rd gpreg r1 gpreg r2; 1
+    | Pfcompdl (c, rd, r1, r2) ->
+      fprintf oc "	fcompdl.%a %a = %a, %a\n	;;\n" fcond c gpreg rd pgpreg r1 pgpreg r2; 1
     | Pfmul (rd, r1, r2) ->
       fprintf oc "	fmul %a = %a, %a\n	;;\n" gpreg rd gpreg r1 gpreg r2; 1
     | Pfmuld (rd, r1, r2) ->
