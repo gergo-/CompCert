@@ -245,6 +245,8 @@ Inductive instruction : Type :=
   | Paddd (rd r1: pgpreg) (op2: preg_or_imm)     (**r integer double-word addition *)
   | Pcomp (t: itest) (rd: gpreg) (r1: gpreg) (r2: reg_or_imm)     (**r integer comparison *)
   | Pcompdl (t: itest) (rd: gpreg) (r1: pgpreg) (r2: preg_or_imm)   (**r integer double-word comparison *)
+  | Pmake (rd: gpreg) (n: int)                   (**r make integer constant *)
+  | Pmaked (rd: pgpreg) (n: int64)               (**r make double-word integer constant *)
   | Pneg (rd r1: gpreg)                          (**r integer negation *)
   | Pnegd (rd r1: pgpreg)                        (**r integer double-word negation *)
   | Psbf (rd r1: gpreg) (op2: reg_or_imm)        (**r integer reverse subtraction (i.e., [op2 - r1]) *)
@@ -265,6 +267,8 @@ Inductive instruction : Type :=
   (* Synthetic instructions *)
   | Pcopy (rd r1: gpreg)                         (**r copy word *)
   | Pcopyd (rd r1: pgpreg)                       (**r copy double-word *)
+  | Pfmake (rd: gpreg) (f: float32)              (**r make 32-bit floating-point constant *)
+  | Pfmaked (rd: pgpreg) (f: float)              (**r make 64-bit floating-point constant *)
 (*
   | Pand: ireg -> ireg -> shift_op -> instruction (**r bitwise and *)
   | Pasr: ireg -> ireg -> ireg -> instruction     (**r arithmetic shift right *)
@@ -701,6 +705,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pcompdl t rd r1 op2 =>
     let op2 := eval_preg_or_imm op2 rs in
     Next (nextinstr (rs#rd <- (compare_long t rs#r1 op2 m))) m
+  | Pmake rd n =>
+    Next (nextinstr (rs#rd <- (Vint n))) m
+  | Pmaked rd n =>
+    Next (nextinstr (rs#rd <- (Vlong n))) m
   | Pneg rd r1 =>
     Next (nextinstr (rs#rd <- (Val.neg rs#r1))) m
   | Pnegd rd r1 =>
@@ -741,6 +749,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     Next (nextinstr (rs#rd <- (rs#r1))) m
   | Pcopyd rd r1 =>
     Next (nextinstr (rs#rd <- (rs#r1))) m
+  | Pfmake rd f =>
+    Next (nextinstr (rs#rd <- (Vsingle f))) m
+  | Pfmaked rd f =>
+    Next (nextinstr (rs#rd <- (Vfloat f))) m
   (* Pseudo-instructions *)
   | Pallocframe sz pos =>
     let (m1, stk) := Mem.alloc m 0 sz in

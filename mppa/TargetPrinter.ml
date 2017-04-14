@@ -11,7 +11,7 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-(* Printing ARM assembly code in asm syntax *)
+(* Printing MPPA assembly code in asm syntax *)
 
 open Printf
 open Camlcoq
@@ -178,8 +178,43 @@ struct
     | PGPR60R61 -> "$r60r61"
     | PGPR62R63 -> "$r62r63"
 
+  let pgpreg_pair_name = function
+    | PGPR0R1   -> "$r0:$r1"
+    | PGPR2R3   -> "$r2:$r3"
+    | PGPR4R5   -> "$r4:$r5"
+    | PGPR6R7   -> "$r6:$r7"
+    | PGPR8R9   -> "$r8:$r9"
+    | PGPR10R11 -> "$r10:$r11"
+    | PGPR12R13 -> "$r12:$r13"
+    | PGPR14R15 -> "$r14:$r15"
+    | PGPR16R17 -> "$r16:$r17"
+    | PGPR18R19 -> "$r18:$r19"
+    | PGPR20R21 -> "$r20:$r21"
+    | PGPR22R23 -> "$r22:$r23"
+    | PGPR24R25 -> "$r24:$r25"
+    | PGPR26R27 -> "$r26:$r27"
+    | PGPR28R29 -> "$r28:$r29"
+    | PGPR30R31 -> "$r30:$r31"
+    | PGPR32R33 -> "$r32:$r33"
+    | PGPR34R35 -> "$r34:$r35"
+    | PGPR36R37 -> "$r36:$r37"
+    | PGPR38R39 -> "$r38:$r39"
+    | PGPR40R41 -> "$r40:$r41"
+    | PGPR42R43 -> "$r42:$r43"
+    | PGPR44R45 -> "$r44:$r45"
+    | PGPR46R47 -> "$r46:$r47"
+    | PGPR48R49 -> "$r48:$r49"
+    | PGPR50R51 -> "$r50:$r51"
+    | PGPR52R53 -> "$r52:$r53"
+    | PGPR54R55 -> "$r54:$r55"
+    | PGPR56R57 -> "$r56:$r57"
+    | PGPR58R59 -> "$r58:$r59"
+    | PGPR60R61 -> "$r60:$r61"
+    | PGPR62R63 -> "$r62:$r63"
+
   let gpreg oc r = output_string oc (gpreg_name r)
   let pgpreg oc r = output_string oc (pgpreg_name r)
+  let pgpreg_pair oc r = output_string oc (pgpreg_pair_name r)
 
   let preg oc = function
     | GPR r -> gpreg oc r
@@ -619,6 +654,10 @@ struct
       fprintf oc "	comp.%a %a = %a, %a\n	;;\n" icond c gpreg rd gpreg r1 reg_or_imm op2; 1
     | Pcompdl (c, rd, r1, op2) ->
       fprintf oc "	compdl.%a %a = %a, %a\n	;;\n" icond c gpreg rd pgpreg r1 preg_or_imm op2; 1
+    | Pmake (rd, n) ->
+      fprintf oc "	make %a = %a\n	;;\n" gpreg rd coqint n; 1
+    | Pmaked (rd, n) ->
+      fprintf oc "	maked %a = %a\n	;;\n" pgpreg rd coqint n; 1
     | Pneg (rd, r1) ->
       fprintf oc "	neg %a = %a\n	;;\n" gpreg rd gpreg r1; 1
     | Pnegd (rd, r1) ->
@@ -656,6 +695,16 @@ struct
       fprintf oc "	copy %a = %a\n	;;\n" gpreg rd gpreg r1; 1
     | Pcopyd (rd, r1) ->
       fprintf oc "	copyd %a = %a\n	;;\n" pgpreg rd pgpreg r1; 1
+    | Pfmake (rd, f) ->
+      let f = camlint_of_coqint(Floats.Float32.to_bits f) in
+      fprintf oc "	make %a = 0x%lx\n	;;\n" gpreg rd f; 1
+    | Pfmaked (rd, f) ->
+      let f = camlint64_of_coqint(Floats.Float.to_bits f) in
+      (* This double-word must be decomposed into two pasted words loaded
+         into a register pair. *)
+      let l = Int64.to_int32 f in
+      let h = Int64.to_int32 (Int64.shift_right_logical f 32) in
+      fprintf oc "	maked %a = 0x%lx:0x%lx\n	;;\n" pgpreg_pair rd l h; 1
     (* Pseudo-instructions *)
     | Pallocframe(sz, ofs) ->
       assert false

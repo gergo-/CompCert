@@ -354,17 +354,18 @@ Definition transl_op
       | FR r, FR a => OK (Pcopyd r a :: k)
       |  _  ,  _   => Error(msg "Asmgen.Omove")
       end
-      (*
   | Ointconst n, nil =>
       do r <- gpreg_of res;
-      OK (loadimm r n k)
-  | Ofloatconst f, nil =>
-      do r <- gpreg_of res;
-      OK (Pflid r f :: k)
+      OK (Pmake r n :: k)
+  | Olongconst n, nil =>
+      do r <- pgpreg_of res;
+      OK (Pmaked r n :: k)
   | Osingleconst f, nil =>
       do r <- gpreg_of res;
-      OK (Pflis r f :: k)
-*)
+      OK (Pfmake r f :: k)
+  | Ofloatconst f, nil =>
+      do r <- pgpreg_of res;
+      OK (Pfmaked r f :: k)
   | Oaddrsymbol s ofs, nil =>
       do r <- gpreg_of res;
       OK (Ploadsymbol r s ofs :: k)
