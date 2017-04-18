@@ -11,7 +11,7 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-(** Correctness proof for ARM code generation: auxiliary results. *)
+(** Correctness proof for MPPA code generation: auxiliary results. *)
 
 Require Import Coqlib.
 Require Import Errors.
@@ -654,116 +654,74 @@ Lemma compare_int_spec:
 Proof.
   intros. unfold rs1. intuition.
 Qed.
+*)
 
 Lemma compare_int_inv:
-  forall rs v1 v2 m,
-  let rs1 := nextinstr (compare_int rs v1 v2 m) in
-  forall r', data_preg r' = true -> rs1#r' = rs#r'.
+  forall rs c v1 v2 m,
+  let rs1 := nextinstr rs#GPR63 <- (compare_int c v1 v2 m) in
+  forall r', data_preg r' = true -> r' <> GPR63 -> r' <> PGPR62R63 -> rs1#r' = rs#r'.
 Proof.
   intros. unfold rs1, compare_int.
   repeat Simplif.
 Qed.
 
-Lemma int_signed_eq:
-  forall x y, Int.eq x y = zeq (Int.signed x) (Int.signed y).
-Proof.
-  intros. unfold Int.eq. unfold proj_sumbool.
-  destruct (zeq (Int.unsigned x) (Int.unsigned y));
-  destruct (zeq (Int.signed x) (Int.signed y)); auto.
-  elim n. unfold Int.signed. rewrite e; auto.
-  elim n. apply Int.eqm_small_eq; auto with ints.
-  eapply Int.eqm_trans. apply Int.eqm_sym. apply Int.eqm_signed_unsigned.
-  rewrite e. apply Int.eqm_signed_unsigned.
-Qed.
-
-Lemma int_not_lt:
-  forall x y, negb (Int.lt y x) = (Int.lt x y || Int.eq x y).
-Proof.
-  intros. unfold Int.lt. rewrite int_signed_eq. unfold proj_sumbool.
-  destruct (zlt (Int.signed y) (Int.signed x)).
-  rewrite zlt_false. rewrite zeq_false. auto. omega. omega.
-  destruct (zeq (Int.signed x) (Int.signed y)).
-  rewrite zlt_false. auto. omega.
-  rewrite zlt_true. auto. omega.
-Qed.
-
-Lemma int_lt_not:
-  forall x y, Int.lt y x = negb (Int.lt x y) && negb (Int.eq x y).
-Proof.
-  intros. rewrite <- negb_orb. rewrite <- int_not_lt. rewrite negb_involutive. auto.
-Qed.
-
-Lemma int_not_ltu:
-  forall x y, negb (Int.ltu y x) = (Int.ltu x y || Int.eq x y).
-Proof.
-  intros. unfold Int.ltu, Int.eq.
-  destruct (zlt (Int.unsigned y) (Int.unsigned x)).
-  rewrite zlt_false. rewrite zeq_false. auto. omega. omega.
-  destruct (zeq (Int.unsigned x) (Int.unsigned y)).
-  rewrite zlt_false. auto. omega.
-  rewrite zlt_true. auto. omega.
-Qed.
-
-Lemma int_ltu_not:
-  forall x y, Int.ltu y x = negb (Int.ltu x y) && negb (Int.eq x y).
-Proof.
-  intros. rewrite <- negb_orb. rewrite <- int_not_ltu. rewrite negb_involutive. auto.
-Qed.
+Ltac cmp_cases :=
+  match goal with
+  | [ |- _ = Some (?cmp ?x ?y) ] => destruct (cmp x y); auto
+  | [ |- _ = Some (negb (?cmp ?x ?y)) ] => destruct (cmp x y); auto
+  | [ |- _ = Some (negb (negb (?cmp ?x ?y))) ] => destruct (cmp x y); auto
+  end.
 
 Lemma cond_for_signed_cmp_correct:
-  forall c v1 v2 rs m b,
+  forall c v1 v2 m b,
   Val.cmp_bool c v1 v2 = Some b ->
-  eval_testcond (cond_for_signed_cmp c)
-                (nextinstr (compare_int rs v1 v2 m)) = Some b.
+  eval_branch_condition BTnez (compare_int (itest_for_cmp c) v1 v2 m) = Some b.
 Proof.
-  intros. generalize (compare_int_spec rs v1 v2 m).
-  set (rs' := nextinstr (compare_int rs v1 v2 m)).
-  intros [A [B [C D]]].
+  intros.
   destruct v1; destruct v2; simpl in H; inv H.
-  unfold eval_testcond. rewrite A; rewrite B; rewrite C; rewrite D.
-  simpl. unfold Val.cmp, Val.cmpu.
-  rewrite Int.lt_sub_overflow.
-  destruct c; simpl.
-  destruct (Int.eq i i0); auto.
-  destruct (Int.eq i i0); auto.
-  destruct (Int.lt i i0); auto.
-  rewrite int_not_lt. destruct (Int.lt i i0); simpl; destruct (Int.eq i i0); auto.
-  rewrite (int_lt_not i i0). destruct (Int.lt i i0); destruct (Int.eq i i0); reflexivity.
-  destruct (Int.lt i i0); reflexivity.
+  unfold eval_branch_condition, compare_int, Val.cmp, Val.cmpu. simpl.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_signed_not_cmp_correct:
+  forall c v1 v2 m b,
+  Val.cmp_bool c v1 v2 = Some b ->
+  eval_branch_condition BTeqz (compare_int (itest_for_cmp c) v1 v2 m) = Some (negb b).
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_int, Val.cmp, Val.cmpu. simpl.
+  destruct c; simpl; cmp_cases.
 Qed.
 
 Lemma cond_for_unsigned_cmp_correct:
-  forall c v1 v2 rs m b,
+  forall c v1 v2 m b,
   Val.cmpu_bool (Mem.valid_pointer m) c v1 v2 = Some b ->
-  eval_testcond (cond_for_unsigned_cmp c)
-                (nextinstr (compare_int rs v1 v2 m)) = Some b.
+  eval_branch_condition BTnez (compare_int (uitest_for_cmp c) v1 v2 m) = Some b.
 Proof.
-  intros. generalize (compare_int_spec rs v1 v2 m).
-  set (rs' := nextinstr (compare_int rs v1 v2 m)).
-  intros [A [B [C D]]].
-  unfold eval_testcond. rewrite B; rewrite C. unfold Val.cmpu, Val.cmp.
+  intros.
   destruct v1; destruct v2; simpl in H; inv H.
-(* int int *)
-  destruct c; simpl; auto.
-  destruct (Int.eq i i0); reflexivity.
-  destruct (Int.eq i i0); auto.
-  destruct (Int.ltu i i0); auto.
-  rewrite (int_not_ltu i i0).  destruct (Int.ltu i i0); destruct (Int.eq i i0); auto.
-  rewrite (int_ltu_not i i0). destruct (Int.ltu i i0); destruct (Int.eq i i0); reflexivity.
-  destruct (Int.ltu i i0); reflexivity.
-(* int ptr *)
+
+  (* int <-> int *)
+  unfold eval_branch_condition, compare_int, Val.cmp, Val.cmpu. simpl.
+  destruct c; simpl; cmp_cases.
+
+  (* int <-> ptr *)
   destruct (Int.eq i Int.zero &&
     (Mem.valid_pointer m b0 (Ptrofs.unsigned i0) || Mem.valid_pointer m b0 (Ptrofs.unsigned i0 - 1))) eqn:?; try discriminate.
-  destruct c; simpl in *; inv H1.
+  destruct c; simpl in *; inv H1; unfold eval_branch_condition, Val.cmpu, Val.cmpu_bool.
   rewrite Heqb1; reflexivity.
   rewrite Heqb1; reflexivity.
-(* ptr int *)
+
+  (* ptr <-> int *)
   destruct (Int.eq i0 Int.zero &&
     (Mem.valid_pointer m b0 (Ptrofs.unsigned i) || Mem.valid_pointer m b0 (Ptrofs.unsigned i - 1))) eqn:?; try discriminate.
-  destruct c; simpl in *; inv H1.
+  destruct c; simpl in *; inv H1; unfold eval_branch_condition, Val.cmpu, Val.cmpu_bool.
   rewrite Heqb1; reflexivity.
   rewrite Heqb1; reflexivity.
-(* ptr ptr *)
+
+  (* ptr <-> ptr *)
+  unfold eval_branch_condition, compare_int, Val.cmpu, Val.cmpu_bool.
   simpl.
   fold (Mem.weak_valid_pointer m b0 (Ptrofs.unsigned i)) in *.
   fold (Mem.weak_valid_pointer m b1 (Ptrofs.unsigned i0)) in *.
@@ -782,29 +740,236 @@ Proof.
   destruct c; simpl in *; inv H1; reflexivity.
 Qed.
 
-Lemma compare_float_spec:
-  forall rs f1 f2,
-  let rs1 := nextinstr (compare_float rs (Vfloat f1) (Vfloat f2)) in
-     rs1#CN = Val.of_bool (Float.cmp Clt f1 f2)
-  /\ rs1#CZ = Val.of_bool (Float.cmp Ceq f1 f2)
-  /\ rs1#CC = Val.of_bool (negb (Float.cmp Clt f1 f2))
-  /\ rs1#CV = Val.of_bool (negb (Float.cmp Ceq f1 f2 || Float.cmp Clt f1 f2 || Float.cmp Cgt f1 f2)).
+Lemma cond_for_unsigned_not_cmp_correct:
+  forall c v1 v2 m b,
+  Val.cmpu_bool (Mem.valid_pointer m) c v1 v2 = Some b ->
+  eval_branch_condition BTeqz (compare_int (uitest_for_cmp c) v1 v2 m) = Some (negb b).
 Proof.
-  intros. intuition.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+
+  (* int <-> int *)
+  unfold eval_branch_condition, compare_int, Val.cmp, Val.cmpu. simpl.
+  destruct c; simpl; cmp_cases.
+
+  (* int <-> ptr *)
+  destruct (Int.eq i Int.zero &&
+    (Mem.valid_pointer m b0 (Ptrofs.unsigned i0) || Mem.valid_pointer m b0 (Ptrofs.unsigned i0 - 1))) eqn:?; try discriminate.
+  destruct c; simpl in *; inv H1; unfold eval_branch_condition, Val.cmpu, Val.cmpu_bool.
+  rewrite Heqb1; reflexivity.
+  rewrite Heqb1; reflexivity.
+
+  (* ptr <-> int *)
+  destruct (Int.eq i0 Int.zero &&
+    (Mem.valid_pointer m b0 (Ptrofs.unsigned i) || Mem.valid_pointer m b0 (Ptrofs.unsigned i - 1))) eqn:?; try discriminate.
+  destruct c; simpl in *; inv H1; unfold eval_branch_condition, Val.cmpu, Val.cmpu_bool.
+  rewrite Heqb1; reflexivity.
+  rewrite Heqb1; reflexivity.
+
+  (* ptr <-> ptr *)
+  unfold eval_branch_condition, compare_int, Val.cmpu, Val.cmpu_bool.
+  simpl.
+  fold (Mem.weak_valid_pointer m b0 (Ptrofs.unsigned i)) in *.
+  fold (Mem.weak_valid_pointer m b1 (Ptrofs.unsigned i0)) in *.
+  destruct (eq_block b0 b1).
+  destruct (Mem.weak_valid_pointer m b0 (Ptrofs.unsigned i) &&
+            Mem.weak_valid_pointer m b1 (Ptrofs.unsigned i0)); inversion H1.
+  destruct c; simpl; auto.
+  destruct (Ptrofs.eq i i0); reflexivity.
+  destruct (Ptrofs.eq i i0); auto.
+  destruct (Ptrofs.ltu i i0); auto.
+  rewrite (Ptrofs.not_ltu i i0). destruct (Ptrofs.ltu i i0); simpl; destruct (Ptrofs.eq i i0); auto.
+  rewrite (Ptrofs.ltu_not i i0). destruct (Ptrofs.ltu i i0); destruct (Ptrofs.eq i i0); reflexivity.
+  destruct (Ptrofs.ltu i i0); reflexivity.
+  destruct (Mem.valid_pointer m b0 (Ptrofs.unsigned i) &&
+            Mem.valid_pointer m b1 (Ptrofs.unsigned i0)); try discriminate.
+  destruct c; simpl in *; inv H1; reflexivity.
 Qed.
 
-Lemma compare_float_inv:
-  forall rs v1 v2,
-  let rs1 := nextinstr (compare_float rs v1 v2) in
-  forall r', data_preg r' = true -> rs1#r' = rs#r'.
+Lemma compare_long_inv:
+  forall rs c v1 v2 m,
+  let rs1 := nextinstr rs#GPR63 <- (compare_long c v1 v2 m) in
+  forall r', data_preg r' = true -> r' <> GPR63 -> r' <> PGPR62R63 -> rs1#r' = rs#r'.
 Proof.
-  intros. unfold rs1, compare_float.
-  assert (nextinstr (rs#CN <- Vundef #CZ <- Vundef #CC <- Vundef #CV <- Vundef) r' = rs r').
-  { repeat Simplif. }
-  destruct v1; destruct v2; auto.
+  intros. unfold rs1, compare_long.
   repeat Simplif.
 Qed.
 
+Lemma cond_for_signed_cmpl_correct:
+  forall c v1 v2 m b,
+  Val.cmpl_bool c v1 v2 = Some b ->
+  eval_branch_condition BTnez (compare_long (itest_for_cmp c) v1 v2 m) = Some b.
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_long, Val.cmpl, Val.cmplu. simpl.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_signed_not_cmpl_correct:
+  forall c v1 v2 m b,
+  Val.cmpl_bool c v1 v2 = Some b ->
+  eval_branch_condition BTeqz (compare_long (itest_for_cmp c) v1 v2 m) = Some (negb b).
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_int, Val.cmpl, Val.cmplu. simpl.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_signed_cmplu_correct:
+  forall c v1 v2 m b,
+  Val.cmplu_bool (Mem.valid_pointer m) c v1 v2 = Some b ->
+  eval_branch_condition BTnez (compare_long (uitest_for_cmp c) v1 v2 m) = Some b.
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_long, Val.cmpl, Val.cmplu. simpl.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_signed_not_cmplu_correct:
+  forall c v1 v2 m b,
+  Val.cmplu_bool (Mem.valid_pointer m) c v1 v2 = Some b ->
+  eval_branch_condition BTeqz (compare_long (uitest_for_cmp c) v1 v2 m) = Some (negb b).
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_int, Val.cmpl, Val.cmplu. simpl.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma compare_float_inv:
+  forall rs c v1 v2,
+  let rs1 := nextinstr rs#GPR63 <- (compare_float c v1 v2) in
+  forall r', data_preg r' = true -> r' <> GPR63 -> r' <> PGPR62R63 -> rs1#r' = rs#r'.
+Proof.
+  intros. unfold rs1, compare_float.
+  repeat Simplif.
+Qed.
+
+(* The [pfcompdl] smart constructor generates correct code. *)
+Lemma pfcompdl_correct:
+  forall t rd r1 r2 rs m,
+  exec_instr ge fn (pfcompdl t rd r1 r2) rs m =
+  exec_instr ge fn (Pfcompdl t rd r1 r2) rs m.
+Proof.
+  intros.
+  destruct t; simpl; auto;
+    destruct (rs r1); auto; destruct (rs r2); auto; unfold compare_float;
+    rewrite <- Float.cmp_swap; auto.
+Qed.
+
+Lemma cond_for_float_cmp_correct:
+  forall c v1 v2 b,
+  Val.cmpf_bool c v1 v2 = Some b ->
+  eval_branch_condition BTnez (compare_float (ftest_for_cmp c) v1 v2) = Some b.
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_float.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_float_not_cmp_correct:
+  forall c v1 v2 b,
+  Val.cmpf_bool c v1 v2 = Some b ->
+  eval_branch_condition BTeqz (compare_float (ftest_for_cmp c) v1 v2) = Some (negb b).
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_float.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_float_negated_cmp_correct:
+  forall c v1 v2 b,
+  Val.cmpf_bool c v1 v2 = Some b ->
+  eval_branch_condition BTnez (compare_float (ftest_for_not_cmp c) v1 v2) = Some (negb b).
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_float.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_float_not_negated_cmp_correct:
+  forall c v1 v2 b,
+  Val.cmpf_bool c v1 v2 = Some b ->
+  eval_branch_condition BTeqz (compare_float (ftest_for_not_cmp c) v1 v2) = Some b.
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_float.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma compare_single_inv:
+  forall rs c v1 v2,
+  let rs1 := nextinstr rs#GPR63 <- (compare_single c v1 v2) in
+  forall r', data_preg r' = true -> r' <> GPR63 -> r' <> PGPR62R63 -> rs1#r' = rs#r'.
+Proof.
+  intros. unfold rs1, compare_single.
+  repeat Simplif.
+Qed.
+
+(* The [pfcomp] smart constructor generates correct code. *)
+Lemma pfcomp_correct:
+  forall t rd r1 r2 rs m,
+  exec_instr ge fn (pfcomp t rd r1 r2) rs m =
+  exec_instr ge fn (Pfcomp t rd r1 r2) rs m.
+Proof.
+  intros.
+  destruct t; simpl; auto;
+    destruct (rs r1); auto; destruct (rs r2); auto; unfold compare_single;
+    rewrite <- Float32.cmp_swap; auto.
+Qed.
+
+Lemma cond_for_single_cmp_correct:
+  forall c v1 v2 b,
+  Val.cmpfs_bool c v1 v2 = Some b ->
+  eval_branch_condition BTnez (compare_single (ftest_for_cmp c) v1 v2) = Some b.
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_single.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_single_not_cmp_correct:
+  forall c v1 v2 b,
+  Val.cmpfs_bool c v1 v2 = Some b ->
+  eval_branch_condition BTeqz (compare_single (ftest_for_cmp c) v1 v2) = Some (negb b).
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_single.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_single_negated_cmp_correct:
+  forall c v1 v2 b,
+  Val.cmpfs_bool c v1 v2 = Some b ->
+  eval_branch_condition BTnez (compare_single (ftest_for_not_cmp c) v1 v2) = Some (negb b).
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_single.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+Lemma cond_for_single_not_negated_cmp_correct:
+  forall c v1 v2 b,
+  Val.cmpfs_bool c v1 v2 = Some b ->
+  eval_branch_condition BTeqz (compare_single (ftest_for_not_cmp c) v1 v2) = Some b.
+Proof.
+  intros.
+  destruct v1; destruct v2; simpl in H; inv H.
+  unfold eval_branch_condition, compare_single.
+  destruct c; simpl; cmp_cases.
+Qed.
+
+(*
 Lemma compare_float_nextpc:
   forall rs v1 v2,
   nextinstr (compare_float rs v1 v2) PC = Val.offset_ptr (rs PC) Ptrofs.one.
@@ -1011,148 +1176,107 @@ Ltac ArgsInv :=
   | [ H: pgpreg_of ?x = OK ?y |- _ ] => simpl in *; rewrite (pgpreg_of_eq _ _ H) in *
   end).
 
-(*
 Lemma transl_cond_correct:
   forall cond args k rs m c,
-  transl_cond cond args k = OK c ->
+  transl_cond cond args R63 k = OK c ->
   exists rs',
      exec_straight ge fn c rs m k rs' m
   /\ match eval_condition cond (map rs (map preg_of args)) m with
-     | Some b => eval_testcond (cond_for_cond cond) rs' = Some b
-                 /\ eval_testcond (cond_for_cond (negate_condition cond)) rs' = Some (negb b)
+     | Some b => eval_branch_condition BTnez rs'#GPR63 = Some b
+                 /\ eval_branch_condition BTeqz rs'#GPR63 = Some (negb b)
      | None => True
      end
-  /\ forall r, data_preg r = true -> rs'#r = rs r.
+  /\ forall r, data_preg r = true -> r <> GPR63 -> r <> PGPR62R63 -> rs'#r = rs r.
 Proof.
   intros until c; intros TR.
   unfold transl_cond in TR; destruct cond; ArgsInv.
 - (* Ccomp *)
   econstructor.
   split. apply exec_straight_one. simpl. eauto. auto.
-  split. destruct (Val.cmp_bool c0 (rs x) (rs x0)) eqn:CMP; auto.
-  split; apply cond_for_signed_cmp_correct; auto. rewrite Val.negate_cmp_bool, CMP; auto.
+  inv EQ. split. destruct (Val.cmp_bool c0 (rs x0) (rs x1)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_signed_cmp_correct; auto.
+  apply cond_for_signed_not_cmp_correct; auto.
+  apply compare_int_inv.
+- (* Ccompimm *)
+  econstructor.
+  split. apply exec_straight_one. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmp_bool c0 (rs x0) (Vint i)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_signed_cmp_correct; auto.
+  apply cond_for_signed_not_cmp_correct; auto.
   apply compare_int_inv.
 - (* Ccompu *)
   econstructor.
   split. apply exec_straight_one. simpl. eauto. auto.
-  split. destruct (Val.cmpu_bool (Mem.valid_pointer m) c0 (rs x) (rs x0)) eqn:CMP; auto.
-  split; apply cond_for_unsigned_cmp_correct; auto. rewrite Val.negate_cmpu_bool, CMP; auto.
+  inv EQ. split. destruct (Val.cmpu_bool (Mem.valid_pointer m) c0 (rs x0) (rs x1)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_unsigned_cmp_correct; auto.
+  apply cond_for_unsigned_not_cmp_correct; auto.
   apply compare_int_inv.
-- (* Ccompshift *)
-  econstructor.
-  split. apply exec_straight_one. simpl. eauto. auto.
-  split. rewrite transl_shift_correct.
-  destruct (Val.cmp_bool c0 (rs x) (eval_shift s (rs x0))) eqn:CMP; auto.
-  split; apply cond_for_signed_cmp_correct; auto. rewrite Val.negate_cmp_bool, CMP; auto.
-  apply compare_int_inv.
-- (* Ccompushift *)
-  econstructor.
-  split. apply exec_straight_one. simpl. eauto. auto.
-  split. rewrite transl_shift_correct.
-  destruct (Val.cmpu_bool (Mem.valid_pointer m) c0 (rs x) (eval_shift s (rs x0))) eqn:CMP; auto.
-  split; apply cond_for_unsigned_cmp_correct; auto. rewrite Val.negate_cmpu_bool, CMP; auto.
-  apply compare_int_inv.
-- (* Ccompimm *)
-  destruct (is_immed_arith i).
-  econstructor.
-  split. apply exec_straight_one. simpl. eauto. auto.
-  split. destruct (Val.cmp_bool c0 (rs x) (Vint i)) eqn:CMP; auto.
-  split; apply cond_for_signed_cmp_correct; auto. rewrite Val.negate_cmp_bool, CMP; auto.
-  apply compare_int_inv.
-  exploit (loadimm_correct IR14). intros [rs' [P [Q R]]].
-  econstructor.
-  split. eapply exec_straight_trans. eexact P. apply exec_straight_one. simpl.
-  rewrite Q. rewrite R; eauto with asmgen. auto.
-  split. rewrite <- R by (eauto with asmgen).
-  destruct (Val.cmp_bool c0 (rs' x) (Vint i)) eqn:CMP; auto.
-  split; apply cond_for_signed_cmp_correct; auto. rewrite Val.negate_cmp_bool, CMP; auto.
-  intros. rewrite compare_int_inv by auto. auto with asmgen.
 - (* Ccompuimm *)
-  destruct (is_immed_arith i).
   econstructor.
   split. apply exec_straight_one. simpl. eauto. auto.
-  split. destruct (Val.cmpu_bool (Mem.valid_pointer m) c0 (rs x) (Vint i)) eqn:CMP; auto.
-  split; apply cond_for_unsigned_cmp_correct; auto. rewrite Val.negate_cmpu_bool, CMP; auto.
+  inv EQ. split. destruct (Val.cmpu_bool (Mem.valid_pointer m) c0 (rs x0) (Vint i)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_unsigned_cmp_correct; auto.
+  apply cond_for_unsigned_not_cmp_correct; auto.
   apply compare_int_inv.
-  exploit (loadimm_correct IR14). intros [rs' [P [Q R]]].
+- (* Ccompl *)
   econstructor.
-  split. eapply exec_straight_trans. eexact P. apply exec_straight_one. simpl.
-  rewrite Q. rewrite R; eauto with asmgen. auto.
-  split. rewrite <- R by (eauto with asmgen).
-  destruct (Val.cmpu_bool (Mem.valid_pointer m) c0 (rs' x) (Vint i)) eqn:CMP; auto.
-  split; apply cond_for_unsigned_cmp_correct; auto. rewrite Val.negate_cmpu_bool, CMP; auto.
-  intros. rewrite compare_int_inv by auto. auto with asmgen.
+  split. apply exec_straight_one. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmpl_bool c0 (rs x0) (rs x1)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_signed_cmpl_correct; auto.
+  apply cond_for_signed_not_cmpl_correct; auto.
+  apply compare_long_inv.
+- (* Ccomplimm *)
+  econstructor.
+  split. apply exec_straight_one. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmpl_bool c0 (rs x0) (Vlong i)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_signed_cmpl_correct; auto.
+  apply cond_for_signed_not_cmpl_correct; auto.
+  apply compare_long_inv.
+- (* Ccomplu *)
+  econstructor.
+  split. apply exec_straight_one. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmplu_bool (Mem.valid_pointer m) c0 (rs x0) (rs x1)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_signed_cmplu_correct; auto.
+  apply cond_for_signed_not_cmplu_correct; auto.
+  apply compare_long_inv.
+- (* Ccompluimm *)
+  econstructor.
+  split. apply exec_straight_one. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmplu_bool (Mem.valid_pointer m) c0 (rs x0) (Vlong i)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_signed_cmplu_correct; auto.
+  apply cond_for_signed_not_cmplu_correct; auto.
+  apply compare_long_inv.
 - (* Ccompf *)
   econstructor.
-  split. apply exec_straight_one. simpl. eauto. apply compare_float_nextpc.
-  split. destruct (Val.cmpf_bool c0 (rs x) (rs x0)) eqn:CMP; auto.
-  destruct (rs x); try discriminate. destruct (rs x0); try discriminate.
-  simpl in CMP. inv CMP.
-  split. apply cond_for_float_cmp_correct. apply cond_for_float_not_cmp_correct.
+  split. apply exec_straight_one. rewrite pfcompdl_correct. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmpf_bool c0 (rs x0) (rs x1)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_float_cmp_correct; auto.
+  apply cond_for_float_not_cmp_correct; auto.
   apply compare_float_inv.
 - (* Cnotcompf *)
   econstructor.
-  split. apply exec_straight_one. simpl. eauto. apply compare_float_nextpc.
-  split. destruct (Val.cmpf_bool c0 (rs x) (rs x0)) eqn:CMP; auto.
-  destruct (rs x); try discriminate. destruct (rs x0); try discriminate.
-  simpl in CMP. inv CMP.
-Local Opaque compare_float. simpl.
-  split. apply cond_for_float_not_cmp_correct. rewrite negb_involutive. apply cond_for_float_cmp_correct.
-  exact I.
-  apply compare_float_inv.
-- (* Ccompfzero *)
-  econstructor.
-  split. apply exec_straight_one. simpl. eauto. apply compare_float_nextpc.
-  split. destruct (Val.cmpf_bool c0 (rs x) (Vfloat Float.zero)) eqn:CMP; auto.
-  destruct (rs x); try discriminate.
-  simpl in CMP. inv CMP.
-  split. apply cond_for_float_cmp_correct. apply cond_for_float_not_cmp_correct.
-  apply compare_float_inv.
-- (* Cnotcompfzero *)
-  econstructor.
-  split. apply exec_straight_one. simpl. eauto. apply compare_float_nextpc.
-  split. destruct (Val.cmpf_bool c0 (rs x) (Vfloat Float.zero)) eqn:CMP; auto.
-  destruct (rs x); try discriminate. simpl in CMP. inv CMP.
-Local Opaque compare_float. simpl.
-  split. apply cond_for_float_not_cmp_correct. rewrite negb_involutive. apply cond_for_float_cmp_correct.
-  exact I.
+  split. apply exec_straight_one. rewrite pfcompdl_correct. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmpf_bool c0 (rs x0) (rs x1)) eqn:CMP; simpl; auto.
+  split; rewrite nextinstr_inv; auto.
+  apply cond_for_float_negated_cmp_correct; auto.
+  rewrite negb_involutive. apply cond_for_float_not_negated_cmp_correct; auto.
   apply compare_float_inv.
 - (* Ccompfs *)
   econstructor.
-  split. apply exec_straight_one. simpl. eauto. apply compare_float32_nextpc.
-  split. destruct (Val.cmpfs_bool c0 (rs x) (rs x0)) eqn:CMP; auto.
-  destruct (rs x); try discriminate. destruct (rs x0); try discriminate.
-  simpl in CMP. inv CMP.
-  split. apply cond_for_float32_cmp_correct. apply cond_for_float32_not_cmp_correct.
-  apply compare_float32_inv.
-- (* Cnotcompfs *)
+  split. apply exec_straight_one. rewrite pfcomp_correct. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmpfs_bool c0 (rs x0) (rs x1)) eqn:CMP; auto.
+  split; rewrite nextinstr_inv; auto. apply cond_for_single_cmp_correct; auto.
+  apply cond_for_single_not_cmp_correct; auto.
+  apply compare_single_inv.
+- (* Cnotcompf *)
   econstructor.
-  split. apply exec_straight_one. simpl. eauto. apply compare_float32_nextpc.
-  split. destruct (Val.cmpfs_bool c0 (rs x) (rs x0)) eqn:CMP; auto.
-  destruct (rs x); try discriminate. destruct (rs x0); try discriminate.
-  simpl in CMP. inv CMP.
-Local Opaque compare_float32. simpl.
-  split. apply cond_for_float32_not_cmp_correct. rewrite negb_involutive. apply cond_for_float32_cmp_correct.
-  exact I.
-  apply compare_float32_inv.
-- (* Ccompfszero *)
-  econstructor.
-  split. apply exec_straight_one. simpl. eauto. apply compare_float32_nextpc.
-  split. destruct (Val.cmpfs_bool c0 (rs x) (Vsingle Float32.zero)) eqn:CMP; auto.
-  destruct (rs x); try discriminate.
-  simpl in CMP. inv CMP.
-  split. apply cond_for_float32_cmp_correct. apply cond_for_float32_not_cmp_correct.
-  apply compare_float32_inv.
-- (* Cnotcompfzero *)
-  econstructor.
-  split. apply exec_straight_one. simpl. eauto. apply compare_float32_nextpc.
-  split. destruct (Val.cmpfs_bool c0 (rs x) (Vsingle Float32.zero)) eqn:CMP; auto.
-  destruct (rs x); try discriminate. simpl in CMP. inv CMP.
-  simpl. split. apply cond_for_float32_not_cmp_correct. rewrite negb_involutive. apply cond_for_float32_cmp_correct.
-  exact I.
-  apply compare_float32_inv.
+  split. apply exec_straight_one. rewrite pfcomp_correct. simpl. eauto. auto.
+  inv EQ. split. destruct (Val.cmpfs_bool c0 (rs x0) (rs x1)) eqn:CMP; simpl; auto.
+  split; rewrite nextinstr_inv; auto.
+  apply cond_for_single_negated_cmp_correct; auto.
+  rewrite negb_involutive. apply cond_for_single_not_negated_cmp_correct; auto.
+  apply compare_single_inv.
 Qed.
-*)
 
 (** Translation of arithmetic operations. *)
 

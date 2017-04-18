@@ -283,7 +283,7 @@ Definition destroyed_by_store (chunk: memory_chunk) (addr: addressing): list mre
   nil.
 
 Definition destroyed_by_cond (cond: condition): list mreg :=
-  nil.
+  R63 :: R62R63 :: nil.
 
 Definition destroyed_by_jumptable: list mreg :=
   nil.

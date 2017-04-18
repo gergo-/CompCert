@@ -296,6 +296,10 @@ Proof.
   unfold transl_store, transl_memory_access_word, transl_memory_access_doubleword in H.
   destruct m; monadInv H; eapply transl_memory_access_label; eauto; simpl; auto.
   destruct s0; monadInv H; TailNoLabel.
+
+  unfold transl_cond_branch in H.
+  eapply tail_nolabel_trans. eapply transl_cond_label; eauto.
+  unfold tail_nolabel; auto with coqlib.
   (*
   destruct s0; monadInv H; unfold loadind_int; eapply tail_nolabel_trans.
   eapply indexed_memory_access_label; auto with labels. TailNoLabel.
@@ -803,7 +807,6 @@ Opaque loadind.
 - (* Mgoto *)
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H4.
-  (*
   exploit find_label_goto_label; eauto. intros [tc' [rs' [GOTO [AT2 INV]]]].
   left; exists (State rs' m'); split.
   apply plus_one. econstructor; eauto.
@@ -813,27 +816,26 @@ Opaque loadind.
   econstructor; eauto.
   eapply agree_exten; eauto with asmgen.
   congruence.
-*)
 
 - (* Mcond true *)
   assert (f0 = f) by congruence. subst f0.
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_steps_goto; eauto.
   intros. simpl in TR.
-  inversion TR.
-  (*
   destruct (transl_cond_correct tge tf cond args _ rs0 m' _ TR) as [rs' [A [B C]]].
   rewrite EC in B. destruct B as [Bpos Bneg].
   econstructor; econstructor; econstructor; split. eexact A.
   split. eapply agree_undef_regs; eauto with asmgen.
+
+  intros.
+  Local Transparent destroyed_by_cond.
+  unfold destroyed_by_cond in H3; simpl in H3. apply C; tauto.
+
   simpl. rewrite Bpos. reflexivity.
-*)
 
 - (* Mcond false *)
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_steps; eauto. intros. simpl in TR.
-  inversion TR.
-(*
   destruct (transl_cond_correct tge tf cond args _ rs0 m' _ TR) as [rs' [A [B C]]].
   rewrite EC in B. destruct B as [Bpos Bneg].
   econstructor; split.
@@ -841,8 +843,11 @@ Opaque loadind.
   apply exec_straight_one. simpl. rewrite Bpos. reflexivity. auto.
   split. eapply agree_undef_regs; eauto with asmgen.
   intros; Simpl.
+  unfold destroyed_by_cond in H1; simpl in H1. apply C; tauto.
+
+  intros.
+  unfold it1_is_parent in H0.
   simpl. congruence.
-*)
 
 - (* Mjumptable *)
   assert (f0 = f) by congruence. subst f0.

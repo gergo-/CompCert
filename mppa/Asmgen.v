@@ -253,94 +253,82 @@ Definition transl_shift (s: shift) (r: ireg) : shift_op :=
   end.
 *)
 
+(** Make a [Pfcompdl] instruction for the given test operation. The test may
+  be one that is not supported directly by the hardware, in which case we
+  chose an appropriate opposite operation and permute the arguments. *)
+Definition pfcompdl (t: ftest) (r: gpreg) (r1 r2: pgpreg) :=
+  match t with
+  | FTole => Pfcompdl FToge r r2 r1
+  | FTule => Pfcompdl FTuge r r2 r1
+  | FTogt => Pfcompdl FTolt r r2 r1
+  | FTugt => Pfcompdl FTult r r2 r1
+  | _ => Pfcompdl t r r1 r2
+  end.
+
+Definition pfcomp (t: ftest) (r: gpreg) (r1 r2: gpreg) :=
+  match t with
+  | FTole => Pfcomp FToge r r2 r1
+  | FTule => Pfcomp FTuge r r2 r1
+  | FTogt => Pfcomp FTolt r r2 r1
+  | FTugt => Pfcomp FTult r r2 r1
+  | _ => Pfcomp t r r1 r2
+  end.
+
 (** Translation of a condition.  Prepends to [k] the instructions
   that evaluate the condition and leave its boolean result in one of
   the destination register. *)
-
-Definition cmp_itest (cmp: comparison) :=
-  match cmp with
-  | Ceq => ITeq
-  | Cne => ITne
-  | Clt => ITlt
-  | Cle => ITle
-  | Cgt => ITgt
-  | Cge => ITge
-  end.
-
-Definition cmp_uitest (cmp: comparison) :=
-  match cmp with
-  | Ceq => ITequ
-  | Cne => ITneu
-  | Clt => ITltu
-  | Cle => ITleu
-  | Cgt => ITgtu
-  | Cge => ITgeu
-  end.
-
-Definition transl_ftest {Res Reg: Type}
-           (f: ftest -> Res -> Reg -> Reg -> instruction) (cmp: comparison) (r: Res) (r1 r2: Reg) :=
-  match cmp with
-  | Ceq => f FToeq r r1 r2
-  | Cne => f FTone r r1 r2
-  | Clt => f FTolt r r1 r2
-  | Cle => f FToge r r2 r1
-  | Cgt => f FTolt r r2 r1
-  | Cge => f FToge r r1 r2
-  end.
-
-Definition transl_notftest {Res Reg: Type}
-           (f: ftest -> Res -> Reg -> Reg -> instruction) (cmp: comparison) (r: Res) (r1 r2: Reg) :=
-  match cmp with
-  | Ceq => f FTune r r1 r2
-  | Cne => f FTueq r r1 r2
-  | Clt => f FTuge r r1 r2
-  | Cle => f FTult r r2 r1
-  | Cgt => f FTuge r r2 r1
-  | Cge => f FTult r r1 r2
-  end.
 
 Definition transl_cond
               (cond: condition) (args: list mreg) (res: mreg) (k: code) :=
   match cond, args with
   | Ccomp c, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pcomp (cmp_itest c) r r1 (RIreg r2) :: k)
+      OK (Pcomp (itest_for_cmp c) r r1 (RIreg r2) :: k)
   | Ccompimm c n, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
-      OK (Pcomp (cmp_itest c) r r1 (RIimm n) :: k)
+      OK (Pcomp (itest_for_cmp c) r r1 (RIimm n) :: k)
   | Ccompu c, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (Pcomp (cmp_uitest c) r r1 (RIreg r2) :: k)
+      OK (Pcomp (uitest_for_cmp c) r r1 (RIreg r2) :: k)
   | Ccompuimm c n, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1;
-      OK (Pcomp (cmp_uitest c) r r1 (RIimm n) :: k)
+      OK (Pcomp (uitest_for_cmp c) r r1 (RIimm n) :: k)
   | Ccompl c, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
-      OK (Pcompdl (cmp_itest c) r r1 (PRIreg r2) :: k)
+      OK (Pcompdl (itest_for_cmp c) r r1 (PRIreg r2) :: k)
   | Ccomplimm c n, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- pgpreg_of a1;
-      OK (Pcompdl (cmp_itest c) r r1 (PRIimm n) :: k)
+      OK (Pcompdl (itest_for_cmp c) r r1 (PRIimm n) :: k)
   | Ccomplu c, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
-      OK (Pcompdl (cmp_uitest c) r r1 (PRIreg r2) :: k)
+      OK (Pcompdl (uitest_for_cmp c) r r1 (PRIreg r2) :: k)
   | Ccompluimm c n, a1 :: nil =>
       do r <- gpreg_of res; do r1 <- pgpreg_of a1;
-      OK (Pcompdl (cmp_uitest c) r r1 (PRIimm n) :: k)
+      OK (Pcompdl (uitest_for_cmp c) r r1 (PRIimm n) :: k)
   | Ccompf c, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
-      OK (transl_ftest Pfcompdl c r r1 r2 :: k)
+      OK (pfcompdl (ftest_for_cmp c) r r1 r2 :: k)
   | Cnotcompf c, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- pgpreg_of a1; do r2 <- pgpreg_of a2;
-      OK (transl_notftest Pfcompdl c r r1 r2 :: k)
+      OK (pfcompdl (ftest_for_not_cmp c) r r1 r2 :: k)
   | Ccompfs c, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (transl_ftest Pfcomp c r r1 r2 :: k)
+      OK (pfcomp (ftest_for_cmp c) r r1 r2 :: k)
   | Cnotcompfs c, a1 :: a2 :: nil =>
       do r <- gpreg_of res; do r1 <- gpreg_of a1; do r2 <- gpreg_of a2;
-      OK (transl_notftest Pfcomp c r r1 r2 :: k)
+      OK (pfcomp (ftest_for_not_cmp c) r r1 r2 :: k)
   | _, _ =>
       Error(msg "Asmgen.transl_cond")
   end.
+
+(** Translation of conditional branches. The MPPA does not have a dedicated
+  condition code register, so in general we must put the condition's result into
+  a general-purpose register and then branch on that register's value. We pick
+  [R63] as an arbitrary but fixed register to clobber. *)
+
+Definition transl_cond_branch
+              (cond: condition) (args: list mreg) (lbl: label) (k: code) :=
+  transl_cond cond args R63 (Pcb BTnez GPR63 lbl :: k).
 
 (** Translation of the arithmetic operation [r <- op(args)].
   The corresponding instructions are prepended to [k]. *)
@@ -771,11 +759,11 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction) (r12_is_parent:
       OK (Pbuiltin ef (List.map (map_builtin_arg preg_of) args) (map_builtin_res preg_of res) :: k)
   | Mlabel lbl =>
       OK (Plabel lbl :: k)
-         (*
   | Mgoto lbl =>
-      OK (Pb lbl :: k)
+      OK (Pgoto lbl :: k)
   | Mcond cond args lbl =>
-      transl_cond cond args (Pbc (cond_for_cond cond) lbl :: k)
+      transl_cond_branch cond args lbl k
+         (*
   | Mjumptable arg tbl =>
       do r <- gpreg_of arg;
       OK (Pbtbl r tbl :: k)

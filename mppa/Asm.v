@@ -199,6 +199,18 @@ Inductive preg_or_imm: Type :=
   | PRIimm (i: int64)
   | PRIreg (r: pgpreg).
 
+(* Branch conditions *)
+Inductive btest: Type :=
+  | BTnez               (** not equal to zero *)
+  | BTeqz               (** equal to zero *)
+  | BTltz               (** less than zero *)
+  | BTgez               (** greater than or equal to zero *)
+  | BTlez               (** less than or equal to zero *)
+  | BTgtz               (** greater than zero *)
+  | BTodd               (** odd (LSB set) *)
+  | BTeven.             (** even (LSB clear) *)
+
+(* Integer comparisons *)
 Inductive itest: Type :=
   | ITne                (**r not equal *)
   | ITeq                (**r equal *)
@@ -218,6 +230,7 @@ Inductive itest: Type :=
   | ITany               (**r any bits set in mask *)
   | ITnone.             (**r not any bits set in mask *)
 
+(* Floating-point comparisons *)
 Inductive ftest: Type :=
   | FTone               (**r ordered and not equal *)
   | FTueq               (**r unordered or equal *)
@@ -226,12 +239,23 @@ Inductive ftest: Type :=
   | FTolt               (**r ordered and less than *)
   | FTuge               (**r unordered or greater than or equal *)
   | FToge               (**r ordered and greater than or equal *)
-  | FTult.              (**r unordered or less than *)
+  | FTult               (**r unordered or less than *)
+  (* The next four constructors are not supported directly by the MPPA, but
+     they are convenient for modeling of the semantics. The smart
+     constructors [pfcomp] and [pfcompdl] in [Asmgen] make sure not to
+     generate them. *)
+  | FTole               (**r ordered and less than or equal *)
+  | FTule               (**r unordered or less than or equal *)
+  | FTogt               (**r ordered and greater than *)
+  | FTugt.              (**r unordered or greater than *)
 
 Inductive instruction : Type :=
   (* Branch control unit instructions *)
   | Pcall (symb: ident) (sig: signature)         (**r call subroutine *)
+  | Pcb (t: btest) (r: gpreg) (l: label)         (**r conditional branch *)
+  | Pcdb (t: btest) (r: pgpreg) (l: label)       (**r conditional branch on double-word *)
   | Pget (rd: gpreg) (rs: preg)                  (**r get system register *)
+  | Pgoto (l: label)                             (**r unconditional branch *)
   | Picall (r: gpreg) (sig: signature)           (**r indirect call subroutine *)
   | Pret                                         (**r return *)
   | Pset (rd: preg) (rs: gpreg)                  (**r set system register *)
@@ -575,6 +599,53 @@ Definition exec_store (chunk: memory_chunk) (addr: val) (r: preg)
 
 (** Comparisons. *)
 
+Definition eval_branch_condition (t: btest) (v: val): option bool :=
+  match v with
+  | Vint n =>
+    match t with
+    | BTnez  => Some (negb (Int.eq n Int.zero))
+    | BTeqz  => Some (Int.eq n Int.zero)
+    | BTltz  => Some (Int.lt n Int.zero)
+    | BTgez  => Some (negb (Int.lt n Int.zero))
+    | BTlez  => Some (negb (Int.lt Int.zero n))
+    | BTgtz  => Some (Int.lt Int.zero n)
+    | BTodd  => Some (Z.odd (Int.unsigned n))
+    | BTeven => Some (Z.even (Int.unsigned n))
+    end
+  | Vlong n =>
+    match t with
+    | BTnez  => Some (negb (Int64.eq n Int64.zero))
+    | BTeqz  => Some (Int64.eq n Int64.zero)
+    | BTltz  => Some (Int64.lt n Int64.zero)
+    | BTgez  => Some (negb (Int64.lt n Int64.zero))
+    | BTlez  => Some (negb (Int64.lt Int64.zero n))
+    | BTgtz  => Some (Int64.lt Int64.zero n)
+    | BTodd  => Some (Z.odd (Int64.unsigned n))
+    | BTeven => Some (Z.even (Int64.unsigned n))
+    end
+  | _ => None
+  end.
+
+Definition itest_for_cmp (c: comparison) :=
+  match c with
+  | Cne => ITne
+  | Ceq => ITeq
+  | Clt => ITlt
+  | Cge => ITge
+  | Cle => ITle
+  | Cgt => ITgt
+  end.
+
+Definition uitest_for_cmp (c: comparison) :=
+  match c with
+  | Cne => ITneu
+  | Ceq => ITequ
+  | Clt => ITltu
+  | Cge => ITgeu
+  | Cle => ITleu
+  | Cgt => ITgtu
+  end.
+
 Definition compare_int (t: itest) (v1 v2: val) (m: mem): val :=
   match t with
   | ITne  => Val.cmp Cne v1 v2
@@ -615,6 +686,26 @@ Definition compare_long (t: itest) (v1 v2: val) (m: mem): val :=
   | ITnone => Vundef
   end.
 
+Definition ftest_for_cmp (c: comparison) :=
+  match c with
+  | Cne => FTone
+  | Ceq => FToeq
+  | Clt => FTolt
+  | Cge => FToge
+  | Cle => FTole
+  | Cgt => FTogt
+  end.
+
+Definition ftest_for_not_cmp (c: comparison) :=
+  match c with
+  | Cne => FTueq
+  | Ceq => FTune
+  | Clt => FTuge
+  | Cge => FTult
+  | Cle => FTugt
+  | Cgt => FTule
+  end.
+
 Definition compare_single (t: ftest) (v1 v2: val): val :=
   match v1, v2 with
   | Vsingle f1, Vsingle f2 =>
@@ -627,6 +718,10 @@ Definition compare_single (t: ftest) (v1 v2: val): val :=
     | FTuge => Val.of_bool (negb (Float32.cmp Clt f1 f2))
     | FToge => Val.of_bool (Float32.cmp Cge f1 f2)
     | FTult => Val.of_bool (negb (Float32.cmp Cge f1 f2))
+    | FTole => Val.of_bool (Float32.cmp Cle f1 f2)
+    | FTule => Val.of_bool (negb (Float32.cmp Cgt f1 f2))
+    | FTogt => Val.of_bool (Float32.cmp Cgt f1 f2)
+    | FTugt => Val.of_bool (negb (Float32.cmp Cle f1 f2))
     end
   | _, _ => Vundef
   end.
@@ -643,6 +738,10 @@ Definition compare_float (t: ftest) (v1 v2: val): val :=
     | FTuge => Val.of_bool (negb (Float.cmp Clt f1 f2))
     | FToge => Val.of_bool (Float.cmp Cge f1 f2)
     | FTult => Val.of_bool (negb (Float.cmp Cge f1 f2))
+    | FTole => Val.of_bool (Float.cmp Cle f1 f2)
+    | FTule => Val.of_bool (negb (Float.cmp Cgt f1 f2))
+    | FTogt => Val.of_bool (Float.cmp Cgt f1 f2)
+    | FTugt => Val.of_bool (negb (Float.cmp Cle f1 f2))
     end
   | _, _ => Vundef
   end.
@@ -666,12 +765,20 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pcall symb sig =>
     Next (rs#RA <- (Val.add rs#PC Vone)
             #PC <- (Genv.symbol_address ge symb Ptrofs.zero)) m
+  | Pcb t r lbl | Pcdb t r lbl =>
+    match eval_branch_condition t rs#r with
+    | Some true => goto_label f lbl rs m
+    | Some false => Next (nextinstr rs) m
+    | None => Stuck
+    end
   | Pget rd r1 =>
     (* Only allow get from [RA] for now. *)
     match r1 with
     | RA => Next (nextinstr (rs#rd <- (rs#r1))) m
     | _ => Stuck
     end
+  | Pgoto lbl =>
+    goto_label f lbl rs m
   | Picall r sig =>
     Next (rs#RA <- (Val.add rs#PC Vone)
             #PC <- (rs#r)) m

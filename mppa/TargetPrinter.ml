@@ -257,8 +257,24 @@ struct
     | FTuge -> "uge"
     | FToge -> "oge"
     | FTult -> "ult"
+    | _ ->
+      (* Conditions used in modeling, but not provided by the hardware. We
+         should never generate these. *)
+      assert false
 
   let fcond oc c = fprintf oc "%s" (fcond_name c)
+
+  let bcond_name = function
+    | BTnez  -> "nez"
+    | BTeqz  -> "eqz"
+    | BTltz  -> "ltz"
+    | BTgez  -> "gez"
+    | BTlez  -> "lez"
+    | BTgtz  -> "gtz"
+    | BTodd  -> "odd"
+    | BTeven -> "even"
+
+  let bcond oc c = fprintf oc "%s" (bcond_name c)
 
     (*
   let condition_name = function
@@ -628,8 +644,14 @@ struct
     (* Branch control unit instructions *)
     | Pcall (symb, _sig) ->
       fprintf oc "	call %a\n	;;\n" symbol symb; 1
+    | Pcb (cond, rs, lbl) ->
+      fprintf oc "	cb.%a %a, %a\n	;;\n" bcond cond gpreg rs print_label lbl; 1
+    | Pcdb (cond, rs, lbl) ->
+      fprintf oc "	cdb.%a %a, %a\n	;;\n" bcond cond pgpreg rs print_label lbl; 1
     | Pget (rd, rs) ->
       fprintf oc "	get %a = %a\n	;;\n" gpreg rd preg rs; 1
+    | Pgoto lbl ->
+      fprintf oc "	goto %a\n	;;\n" print_label lbl; 1
     | Picall (r, _sig) ->
       fprintf oc "	icall %a\n	;;\n" gpreg r; 1
     | Pret ->
@@ -652,8 +674,11 @@ struct
       fprintf oc "	addd %a = %a, %a\n	;;\n" pgpreg rd pgpreg r1 preg_or_imm op2; 1
     | Pcomp (c, rd, r1, op2) ->
       fprintf oc "	comp.%a %a = %a, %a\n	;;\n" icond c gpreg rd gpreg r1 reg_or_imm op2; 1
-    | Pcompdl (c, rd, r1, op2) ->
-      fprintf oc "	compdl.%a %a = %a, %a\n	;;\n" icond c gpreg rd pgpreg r1 preg_or_imm op2; 1
+    | Pcompdl (c, rd, r1, PRIimm n) ->
+      (* The double register argument must be printed as a pasted pair. *)
+      fprintf oc "	compdl.%a %a = %a, %a\n	;;\n" icond c gpreg rd pgpreg_pair r1 coqint n; 1
+    | Pcompdl (c, rd, r1, PRIreg r2) ->
+      fprintf oc "	compdl.%a %a = %a, %a\n	;;\n" icond c gpreg rd pgpreg r1 pgpreg r2; 1
     | Pmake (rd, n) ->
       fprintf oc "	make %a = %a\n	;;\n" gpreg rd coqint n; 1
     | Pmaked (rd, n) ->
