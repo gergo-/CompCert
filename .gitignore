@@ -37,6 +37,9 @@ powerpc/SelectLong.v
 arm/ConstpropOp.v
 arm/SelectOp.v
 arm/SelectLong.v
+mppa/ConstpropOp.v
+mppa/SelectOp.v
+mppa/SelectLong.v
 backend/SelectDiv.v
 backend/SplitLong.v
 cparser/Parser.v
