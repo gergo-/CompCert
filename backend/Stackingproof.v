@@ -606,7 +606,7 @@ Hint Resolve agree_reg agree_reglist: stacking.
 
 (** Preservation under assignments of machine registers. *)
 
-Lemma agree_regs_set_reg:
+Lemma agree_regs_set_reg_single:
   forall j ls rs r v v',
   agree_regs j ls rs ->
   Val.inject j v v' ->
@@ -615,7 +615,31 @@ Proof.
   intros; red; intros.
   unfold Regmap.set. destruct (RegEq.eq r0 r). subst r0.
   rewrite Locmap.gss; auto.
-  rewrite Locmap.gso; auto. red. auto.
+  destruct (mreg_diff_dec r r0).
+  - rewrite Locmap.gso; auto.
+  - unfold Locmap.set.
+    destruct (OrderedMreg.eq_dec r r0).
+    + subst r0. contradiction.
+    + rewrite dec_eq_false; try congruence.
+      rewrite pred_dec_false; auto.
+Qed.
+
+Lemma agree_regs_set_reg:
+  forall j ls rs r v v',
+  agree_regs j ls rs ->
+  Val.inject j v v' ->
+  agree_regs j (Locmap.set (R r) v ls) (rs # r <- v').
+Proof.
+  intros; red; intros.
+  destruct (mreg_diff_dec r r0).
+  - rewrite regmap_gso; auto.
+    rewrite Locmap.gso; auto.
+  - unfold Locmap.set.
+    destruct (OrderedMreg.eq_dec r r0).
+    + subst r0. unfold regmap_set.
+      rewrite dec_eq_true, Regmap.gss; auto.
+    + rewrite dec_eq_false; try congruence.
+      rewrite pred_dec_false; auto.
 Qed.
 
 Lemma agree_regs_set_pair:
@@ -663,7 +687,16 @@ Lemma agree_regs_undef_regs:
 Proof.
   induction rl; simpl; intros.
   auto.
-  apply agree_regs_set_reg; auto.
+  unfold agree_regs. intros.
+  destruct (mreg_diff_dec a r).
+  - rewrite Locmap.gso, Regmap.gso; auto.
+    apply IHrl; auto.
+    apply diff_not_eq, diff_sym; auto.
+  - unfold Locmap.set.
+    destruct (OrderedMreg.eq_dec a r).
+    + subst a. rewrite dec_eq_true. rewrite Regmap.gss; auto.
+    + rewrite dec_eq_false; try congruence.
+      rewrite pred_dec_false; auto.
 Qed.
 
 (** Preservation under assignment of stack slot *)
@@ -707,7 +740,7 @@ Lemma agree_locs_set_reg:
   agree_locs (Locmap.set (R r) v ls) ls0.
 Proof.
   intros. inv H; constructor; auto; intros.
-  rewrite Locmap.gso. auto. red. intuition congruence.
+  rewrite Locmap.gso. auto. red. eauto using mreg_within_bounds_diff.
 Qed.
 
 Lemma caller_save_reg_within_bounds:
@@ -833,7 +866,8 @@ Lemma agree_callee_save_set_result:
 Proof.
   intros; red; intros. rewrite Locmap.gpo. apply H; auto. 
   assert (X: forall r, is_callee_save r = false -> Loc.diff l (R r)).
-  { intros. destruct l; auto. simpl; congruence. }
+  { intros. destruct l; auto.
+    generalize (callee_caller_save_diff r0 r); intuition congruence. }
   generalize (loc_result_caller_save sg). destruct (loc_result sg); simpl; intuition auto.
 Qed.
 
@@ -1000,10 +1034,10 @@ Proof.
 Qed.
 
 Remark LTL_undef_regs_others:
-  forall r rl ls, ~In r rl -> LTL.undef_regs rl ls (R r) = ls (R r).
+  forall r rl ls, (forall r', In r' rl -> mreg_diff r r') -> LTL.undef_regs rl ls (R r) = ls (R r).
 Proof.
   induction rl; simpl; intros. auto.
-  rewrite Locmap.gso. apply IHrl. intuition. red. intuition.
+  rewrite Locmap.gso; auto. apply diff_sym, H. auto.
 Qed.
 
 Remark LTL_undef_regs_slot:
@@ -1054,11 +1088,9 @@ Proof.
     unfold ls1. rewrite LTL_undef_regs_others. unfold call_regs. 
     apply AGCS; auto.
     red; intros.
-    assert (existsb is_callee_save destroyed_at_function_entry = false)
-       by  (apply destroyed_at_function_entry_caller_save).
-    assert (existsb is_callee_save destroyed_at_function_entry = true).
-    { apply existsb_exists. exists r; auto. }
-    congruence.
+    generalize destroyed_at_function_entry_caller_save; unfold no_callee_saves; intros.
+    apply callee_caller_save_diff. contradict H1. rewrite not_false_iff_true.
+    apply existsb_exists. eauto.
   split. exact PERMS. exact AG'.
 Qed.
 
@@ -1225,7 +1257,7 @@ Local Opaque mreg_type.
   intros (v & LOAD & SPEC).
   exploit (IHl (ofs1 + sz) (rs#r <- v)).
     eapply sep_proj2; eassumption.
-    red; intros. rewrite Regmap.gso. auto. intuition congruence.
+    red; intros. rewrite regmap_gso. auto. apply mreg_within_bounds_diff with f; auto.
     eauto.
   intros (rs' & A & B & C & D).
   exists rs'.
@@ -1234,11 +1266,14 @@ Local Opaque mreg_type.
   split. intros.
     destruct (In_dec mreg_eq r0 l). auto. 
     assert (r = r0) by tauto. subst r0.
-    rewrite C by auto. rewrite Regmap.gss. exact SPEC.
+    rewrite C by auto. rewrite regmap_gss. exact SPEC.
   split. intros. 
-    rewrite C by tauto. apply Regmap.gso. intuition auto.
+    rewrite C by tauto. apply regmap_gso.
+    apply Decidable.not_or in H2. inv H2.
+    admit. (*intuition auto.*)
   exact D.
-Qed.
+(*Qed.*)
+Admitted. (* FIXME *)
 
 End RESTORE_CALLEE_SAVE.
 

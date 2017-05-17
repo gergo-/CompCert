@@ -146,7 +146,7 @@ Module Loc.
   Definition diff (l1 l2: loc) : Prop :=
     match l1, l2 with
     | R r1, R r2 =>
-        r1 <> r2
+        mreg_diff r1 r2
     | S s1 d1 t1, S s2 d2 t2 =>
         s1 <> s2 \/ d1 + typesize t1 <= d2 \/ d2 + typesize t2 <= d1
     | _, _ =>
@@ -156,7 +156,7 @@ Module Loc.
   Lemma same_not_diff:
     forall l, ~(diff l l).
   Proof.
-    destruct l; unfold diff; auto.
+    destruct l; unfold diff; auto using Machregs.same_not_diff.
     red; intros. destruct H; auto. generalize (typesize_pos ty); omega.
   Qed.
 
@@ -170,13 +170,14 @@ Module Loc.
     forall l1 l2, diff l1 l2 -> diff l2 l1.
   Proof.
     destruct l1; destruct l2; unfold diff; auto.
+    apply diff_sym.
     intuition.
   Qed.
 
   Definition diff_dec (l1 l2: loc) : { Loc.diff l1 l2 } + { ~Loc.diff l1 l2 }.
   Proof.
     intros. destruct l1; destruct l2; simpl.
-  - destruct (mreg_eq r r0). right; tauto. left; auto.
+  - apply mreg_diff_dec.
   - left; auto.
   - left; auto.
   - destruct (slot_eq sl sl0).
@@ -463,7 +464,7 @@ Module OrderedLoc <: OrderedType.
   Definition eq (x y: t) := x = y.
   Definition lt (x y: t) :=
     match x, y with
-    | R r1, R r2 => Plt (IndexedMreg.index r1) (IndexedMreg.index r2)
+    | R r1, R r2 => OrderedMreg.lt r1 r2
     | R _, S _ _ _ => True
     | S _ _ _, R _ => False
     | S sl1 ofs1 ty1, S sl2 ofs2 ty2 =>
@@ -480,7 +481,7 @@ Module OrderedLoc <: OrderedType.
   Proof.
     unfold lt; intros.
     destruct x; destruct y; destruct z; try tauto.
-    eapply Plt_trans; eauto.
+    eauto using OrderedMreg.lt_trans.
     destruct H.
     destruct H0. left; eapply OrderedSlot.lt_trans; eauto.
     destruct H0. subst sl0. auto.
@@ -495,7 +496,7 @@ Module OrderedLoc <: OrderedType.
   Proof.
     unfold lt, eq; intros; red; intros. subst y.
     destruct x.
-    eelim Plt_strict; eauto.
+    eapply OrderedMreg.lt_not_eq in H; auto.
     destruct H. eelim OrderedSlot.lt_not_eq; eauto. red; auto.
     destruct H. destruct H0. omega.
     destruct H0. eelim OrderedTyp.lt_not_eq; eauto. red; auto.
@@ -503,9 +504,9 @@ Module OrderedLoc <: OrderedType.
   Definition compare : forall x y : t, Compare lt eq x y.
   Proof.
     intros. destruct x; destruct y.
-  - destruct (OrderedPositive.compare (IndexedMreg.index r) (IndexedMreg.index r0)).
+  - destruct (OrderedMreg.compare r r0).
     + apply LT. red. auto.
-    + apply EQ. red. f_equal. apply IndexedMreg.index_inj. auto.
+    + apply EQ. red. red in e. congruence.
     + apply GT. red. auto.
   - apply LT. red; auto.
   - apply GT. red; auto.
@@ -526,13 +527,13 @@ Module OrderedLoc <: OrderedType.
 
   Definition diff_low_bound (l: loc) : loc :=
     match l with
-    | R mr => l
+    | R r => R (OrderedMreg.diff_low_bound r)
     | S sl ofs ty => S sl (ofs - 1) Tany64
     end.
 
   Definition diff_high_bound (l: loc) : loc :=
     match l with
-    | R mr => l
+    | R r => R (OrderedMreg.diff_high_bound r)
     | S sl ofs ty => S sl (ofs + typesize ty - 1) Tlong
     end.
 
@@ -541,9 +542,7 @@ Module OrderedLoc <: OrderedType.
   Proof.
     intros.
     destruct l as [mr | sl ofs ty]; destruct l' as [mr' | sl' ofs' ty']; simpl in *; auto.
-    - assert (IndexedMreg.index mr <> IndexedMreg.index mr').
-      { destruct H. apply sym_not_equal. apply Plt_ne; auto. apply Plt_ne; auto. }
-      congruence.
+    - auto using OrderedMreg.outside_interval_diff.
     - assert (RANGE: forall ty, 1 <= typesize ty <= 2).
       { intros; unfold typesize. destruct ty0; omega.  }
       destruct H.
@@ -565,10 +564,7 @@ Module OrderedLoc <: OrderedType.
   Proof.
     intros.
     destruct l as [mr | sl ofs ty]; destruct l' as [mr' | sl' ofs' ty']; simpl in *; auto.
-    - unfold Plt, Pos.lt. destruct (Pos.compare (IndexedMreg.index mr) (IndexedMreg.index mr')) eqn:C.
-      elim H. apply IndexedMreg.index_inj. apply Pos.compare_eq_iff. auto.
-      auto.
-      rewrite Pos.compare_antisym. rewrite C. auto.
+    - auto using OrderedMreg.diff_outside_interval.
     - destruct (OrderedSlot.compare sl sl'); auto.
       destruct H. contradiction.
       destruct H.

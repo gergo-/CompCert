@@ -48,6 +48,14 @@ Proof.
 Qed.
 Hint Resolve ireg_of_not_R14': asmgen.
 
+Lemma ireg_of_no_overlap_R14:
+  forall m r, ireg_of m = OK r -> ~ preg_overlap (IR r) (IR IR14).
+Proof.
+  intros. erewrite <- ireg_of_eq; eauto with asmgen.
+  destruct m; compute; tauto.
+Qed.
+Hint Resolve ireg_of_no_overlap_R14: asmgen.
+
 (** [undef_flags] and [nextinstr_nf] *)
 
 Lemma nextinstr_nf_pc:
@@ -75,7 +83,12 @@ Proof.
   intros; red; intros; subst; discriminate.
 Qed.
 
-Hint Resolve data_if_preg if_preg_not_PC: asmgen.
+Lemma if_preg_no_overlap_PC: forall r, if_preg r = true -> ~ preg_overlap PC r.
+Proof.
+  intros. contradict H. apply preg_overlap_sym, special_preg_no_overlap in H; auto.
+Qed.
+
+Hint Resolve data_if_preg if_preg_not_PC if_preg_no_overlap_PC: asmgen.
 
 Lemma nextinstr_nf_inv:
   forall r rs, if_preg r = true -> (nextinstr_nf rs)#r = rs#r.
@@ -96,9 +109,11 @@ Ltac Simplif :=
   || (rewrite nextinstr_inv1 by eauto with asmgen)
   || (rewrite nextinstr_nf_inv by eauto with asmgen)
   || (rewrite Pregmap.gss)
+  || (rewrite pregmap_gss)
   || (rewrite nextinstr_pc)
   || (rewrite nextinstr_nf_pc)
-  || (rewrite Pregmap.gso by eauto with asmgen)); auto with asmgen.
+  || (rewrite Pregmap.gso by eauto with asmgen)
+  || (rewrite pregmap_gso by eauto with asmgen)); auto with asmgen.
 
 Ltac Simpl := repeat Simplif.
 
@@ -302,7 +317,7 @@ Lemma iterate_op_correct:
   exists rs',
      exec_straight ge fn (iterate_op op1 op2 (decompose_int n) k) rs m  k rs' m
   /\ rs'#r = List.fold_left f (decompose_int n) v0
-  /\ forall r': preg, r' <> r -> if_preg r' = true -> rs'#r' = rs#r'.
+  /\ forall r': preg, r' <> r -> ~ preg_overlap r' r -> if_preg r' = true -> rs'#r' = rs#r'.
 Proof.
   intros until k; intros SEM2 SEM1.
   unfold iterate_op.
@@ -331,7 +346,7 @@ Lemma loadimm_correct:
   exists rs',
      exec_straight ge fn (loadimm r n k) rs m  k rs' m
   /\ rs'#r = Vint n
-  /\ forall r': preg, r' <> r -> if_preg r' = true -> rs'#r' = rs#r'.
+  /\ forall r': preg, r' <> r -> ~ preg_overlap r' r -> if_preg r' = true -> rs'#r' = rs#r'.
 Proof.
   intros. unfold loadimm.
   set (l1 := length (decompose_int n)).
@@ -386,7 +401,7 @@ Lemma addimm_correct:
   exists rs',
      exec_straight ge fn (addimm r1 r2 n k) rs m  k rs' m
   /\ rs'#r1 = Val.add rs#r2 (Vint n)
-  /\ forall r': preg, r' <> r1 -> if_preg r' = true -> rs'#r' = rs#r'.
+  /\ forall r': preg, r' <> r1 -> ~ preg_overlap r' r1 -> if_preg r' = true -> rs'#r' = rs#r'.
 Proof.
   intros. unfold addimm.
   destruct (Int.ltu (Int.repr (-256)) n).
@@ -417,7 +432,7 @@ Lemma andimm_correct:
   exists rs',
      exec_straight ge fn (andimm r1 r2 n k) rs m  k rs' m
   /\ rs'#r1 = Val.and rs#r2 (Vint n)
-  /\ forall r': preg, r' <> r1 -> if_preg r' = true -> rs'#r' = rs#r'.
+  /\ forall r': preg, r' <> r1 -> ~ preg_overlap r' r1 -> if_preg r' = true -> rs'#r' = rs#r'.
 Proof.
   intros. unfold andimm. destruct (is_immed_arith n).
   (* andi *)
@@ -438,7 +453,7 @@ Lemma rsubimm_correct:
   exists rs',
      exec_straight ge fn (rsubimm r1 r2 n k) rs m  k rs' m
   /\ rs'#r1 = Val.sub (Vint n) rs#r2
-  /\ forall r': preg, r' <> r1 -> if_preg r' = true -> rs'#r' = rs#r'.
+  /\ forall r': preg, r' <> r1 -> ~ preg_overlap r' r1 -> if_preg r' = true -> rs'#r' = rs#r'.
 Proof.
   intros. unfold rsubimm.
   (* rsb - add* *)
@@ -459,7 +474,7 @@ Lemma orimm_correct:
   exists rs',
      exec_straight ge fn (orimm r1 r2 n k) rs m  k rs' m
   /\ rs'#r1 = Val.or rs#r2 (Vint n)
-  /\ forall r': preg, r' <> r1 -> if_preg r' = true -> rs'#r' = rs#r'.
+  /\ forall r': preg, r' <> r1 -> ~ preg_overlap r' r1 -> if_preg r' = true -> rs'#r' = rs#r'.
 Proof.
   intros. unfold orimm.
   (* ori - ori* *)
@@ -478,7 +493,7 @@ Lemma xorimm_correct:
   exists rs',
      exec_straight ge fn (xorimm r1 r2 n k) rs m  k rs' m
   /\ rs'#r1 = Val.xor rs#r2 (Vint n)
-  /\ forall r': preg, r' <> r1 -> if_preg r' = true -> rs'#r' = rs#r'.
+  /\ forall r': preg, r' <> r1 -> ~ preg_overlap r' r1 -> if_preg r' = true -> rs'#r' = rs#r'.
 Proof.
   intros. unfold xorimm.
   (* xori - xori* *)
@@ -517,7 +532,8 @@ Proof.
   rewrite Int.sub_add_opp. rewrite Int.add_assoc.
   rewrite (Int.add_commut (Int.neg (mk_immed n))).
   rewrite Int.add_neg_zero. rewrite Int.add_zero. auto.
-  auto with asmgen.
+  intros; apply C; auto with asmgen.
+  compute; tauto.
   exists rs2; split; auto. eapply exec_straight_trans; eauto.
 Qed.
 
@@ -527,7 +543,7 @@ Lemma loadind_int_correct:
   exists rs',
      exec_straight ge fn (loadind_int base ofs dst k) rs m k rs' m
   /\ rs'#dst = v
-  /\ forall r, if_preg r = true -> r <> IR14 -> r <> dst -> rs'#r = rs#r.
+  /\ forall r, if_preg r = true -> r <> IR14 -> r <> dst -> ~ preg_overlap r dst -> rs'#r = rs#r.
 Proof.
   intros; unfold loadind_int.
   assert (Val.offset_ptr (rs base) ofs = Val.add (rs base) (Vint (Ptrofs.to_int ofs))).
@@ -545,7 +561,7 @@ Lemma loadind_correct:
   exists rs',
      exec_straight ge fn c rs m k rs' m
   /\ rs'#(preg_of dst) = v
-  /\ forall r, if_preg r = true -> r <> IR14 -> r <> preg_of dst -> rs'#r = rs#r.
+  /\ forall r, if_preg r = true -> r <> IR14 -> r <> preg_of dst -> ~ preg_overlap r (preg_of dst) -> rs'#r = rs#r.
 Proof.
   unfold loadind; intros. 
   assert (Val.offset_ptr (rs base) ofs = Val.add (rs base) (Vint (Ptrofs.to_int ofs))).
@@ -556,12 +572,14 @@ Proof.
 - (* float *)
   apply indexed_memory_access_correct; intros.
   econstructor; split.
-  apply exec_straight_one. simpl. unfold exec_load. rewrite H, <- H1, H0. eauto. auto.
+  apply exec_straight_one. simpl. unfold exec_load. rewrite H, <- H1, H0. eauto.
+  destruct f; auto.
   split; intros; Simpl.
 - (* single *)
   apply indexed_memory_access_correct; intros.
   econstructor; split.
-  apply exec_straight_one. simpl. unfold exec_load. rewrite H, <- H1, H0. eauto. auto.
+  apply exec_straight_one. simpl. unfold exec_load. rewrite H, <- H1, H0. eauto.
+  destruct s; auto.
   split; intros; Simpl.
 - (* any32 *)
   apply indexed_memory_access_correct; intros.
@@ -571,7 +589,8 @@ Proof.
 - (* any64 *)
   apply indexed_memory_access_correct; intros.
   econstructor; split.
-  apply exec_straight_one. simpl. unfold exec_load. rewrite H, <- H1, H0. eauto. auto.
+  apply exec_straight_one. simpl. unfold exec_load. rewrite H, <- H1, H0. eauto.
+  destruct f; auto.
   split; intros; Simpl.
 Qed.
 
@@ -645,7 +664,8 @@ Lemma compare_int_inv:
   forall r', data_preg r' = true -> rs1#r' = rs#r'.
 Proof.
   intros. unfold rs1, compare_int.
-  repeat Simplif.
+  assert (forall c, ~ preg_overlap r' (CR c)) by (unfold preg_overlap; simpl; tauto).
+  Simpl.
 Qed.
 
 Lemma int_signed_eq:
@@ -783,6 +803,7 @@ Lemma compare_float_inv:
   forall r', data_preg r' = true -> rs1#r' = rs#r'.
 Proof.
   intros. unfold rs1, compare_float.
+  assert (forall c, ~ preg_overlap r' (CR c)) by (unfold preg_overlap; simpl; tauto).
   assert (nextinstr (rs#CN <- Vundef #CZ <- Vundef #CC <- Vundef #CV <- Vundef) r' = rs r').
   { repeat Simplif. }
   destruct v1; destruct v2; auto.
@@ -889,6 +910,7 @@ Lemma compare_float32_inv:
   forall r', data_preg r' = true -> rs1#r' = rs#r'.
 Proof.
   intros. unfold rs1, compare_float32.
+  assert (forall c, ~ preg_overlap r' (CR c)) by (unfold preg_overlap; simpl; tauto).
   assert (nextinstr (rs#CN <- Vundef #CZ <- Vundef #CC <- Vundef #CV <- Vundef) r' = rs r').
   { repeat Simplif. }
   destruct v1; destruct v2; auto.
@@ -1043,11 +1065,13 @@ Proof.
   exploit (loadimm_correct IR14). intros [rs' [P [Q R]]].
   econstructor.
   split. eapply exec_straight_trans. eexact P. apply exec_straight_one. simpl.
-  rewrite Q. rewrite R; eauto with asmgen. auto.
-  split. rewrite <- R by (eauto with asmgen).
+  rewrite Q. rewrite R; eauto with asmgen.
+  unfold preg_overlap. simpl; tauto. auto.
+  split. rewrite <- R; eauto with asmgen.
   destruct (Val.cmp_bool c0 (rs' x) (Vint i)) eqn:CMP; auto.
   split; apply cond_for_signed_cmp_correct; auto. rewrite Val.negate_cmp_bool, CMP; auto.
-  intros. rewrite compare_int_inv by auto. auto with asmgen.
+  intros. rewrite compare_int_inv by auto.
+  rewrite R; auto with asmgen. unfold preg_overlap. simpl; tauto.
 - (* Ccompuimm *)
   destruct (is_immed_arith i).
   econstructor.
@@ -1058,11 +1082,13 @@ Proof.
   exploit (loadimm_correct IR14). intros [rs' [P [Q R]]].
   econstructor.
   split. eapply exec_straight_trans. eexact P. apply exec_straight_one. simpl.
-  rewrite Q. rewrite R; eauto with asmgen. auto.
-  split. rewrite <- R by (eauto with asmgen).
+  rewrite Q. rewrite R; eauto with asmgen.
+  unfold preg_overlap; simpl; tauto. auto.
+  split. rewrite <- R; eauto with asmgen.
   destruct (Val.cmpu_bool (Mem.valid_pointer m) c0 (rs' x) (Vint i)) eqn:CMP; auto.
   split; apply cond_for_unsigned_cmp_correct; auto. rewrite Val.negate_cmpu_bool, CMP; auto.
-  intros. rewrite compare_int_inv by auto. auto with asmgen.
+  intros. rewrite compare_int_inv by auto.
+  rewrite R; auto with asmgen. unfold preg_overlap. simpl; tauto.
 - (* Ccompf *)
   econstructor.
   split. apply exec_straight_one. simpl. eauto. apply compare_float_nextpc.
@@ -1138,7 +1164,7 @@ Qed.
 
 Ltac TranslOpSimpl :=
   econstructor; split;
-  [ apply exec_straight_one; [simpl; eauto | reflexivity ]
+  [ apply exec_straight_one; [simpl; eauto | Simpl ]
   | split; [try rewrite transl_shift_correct; repeat Simpl | intros; repeat Simpl] ].
 
 Lemma transl_op_correct_same:
@@ -1149,7 +1175,7 @@ Lemma transl_op_correct_same:
   exists rs',
      exec_straight ge fn c rs m k rs' m
   /\ rs'#(preg_of res) = v
-  /\ forall r, data_preg r = true -> r <> preg_of res -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r.
+  /\ forall r, data_preg r = true -> r <> preg_of res -> ~ preg_overlap r (preg_of res) -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r.
 Proof.
   intros until v; intros TR EV NOCMP.
   unfold transl_op in TR; destruct op; ArgsInv; simpl in EV; inv EV; try (TranslOpSimpl; fail).
@@ -1158,7 +1184,9 @@ Proof.
   destruct (preg_of m0) eqn:ARG; inv TR.
   econstructor; split. apply exec_straight_one; simpl; eauto. intuition Simpl.
   econstructor; split. apply exec_straight_one; simpl; eauto. intuition Simpl.
+  intuition Simpl.
   econstructor; split. apply exec_straight_one; simpl; eauto. intuition Simpl.
+  intuition Simpl.
   (* Ointconst *)
   generalize (loadimm_correct x i k rs m). intros [rs' [A [B C]]].
   exists rs'; auto with asmgen.
@@ -1267,26 +1295,38 @@ Local Transparent destroyed_by_op.
   econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
 Transparent destroyed_by_op.
   simpl. intuition Simpl.
+  unfold pregmap_set. simpl. repeat rewrite Pregmap.gso; auto.
   (* intuoffloat *)
   econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
   simpl. intuition Simpl.
+  unfold pregmap_set. simpl. repeat rewrite Pregmap.gso; auto.
   (* floatofint *)
-  econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
+  econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl.
+  instantiate (1 := nextinstr rs # (FR x) <- v); auto.
+  unfold nextinstr. Simpl.
   intuition Simpl.
   (* floatofintu *)
-  econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
+  econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl.
+  instantiate (1 := nextinstr rs # (FR x) <- v); auto.
+  unfold nextinstr. Simpl.
   intuition Simpl.
   (* intofsingle *)
   econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
   simpl. intuition Simpl.
+  unfold pregmap_set. simpl. repeat rewrite Pregmap.gso; auto.
   (* intuofsingle *)
   econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
   simpl. intuition Simpl.
+  unfold pregmap_set. simpl. repeat rewrite Pregmap.gso; auto.
   (* singleofint *)
-  econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
+  econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl.
+  instantiate (1 := nextinstr rs # (SR x) <- v); auto.
+  unfold nextinstr. Simpl.
   intuition Simpl.
   (* singleofintu *)
-  econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl. eauto. auto.
+  econstructor; split. apply exec_straight_one; simpl. rewrite H0; simpl.
+  instantiate (1 := nextinstr rs # (SR x) <- v); auto.
+  unfold nextinstr. Simpl.
   intuition Simpl.
   (* Ocmp *)
   contradiction.
@@ -1299,16 +1339,16 @@ Lemma transl_op_correct:
   exists rs',
      exec_straight ge fn c rs m k rs' m
   /\ Val.lessdef v rs'#(preg_of res)
-  /\ forall r, data_preg r = true -> r <> preg_of res -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r.
+  /\ forall r, data_preg r = true -> r <> preg_of res -> ~ preg_overlap r (preg_of res) -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r.
 Proof.
   intros.
   assert (SAME:
       (exists rs', exec_straight ge fn c rs m k rs' m
            /\ rs'#(preg_of res) = v
-           /\ forall r, data_preg r = true -> r <> preg_of res -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r) ->
+           /\ forall r, data_preg r = true -> r <> preg_of res -> ~ preg_overlap r (preg_of res) -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r) ->
        exists rs', exec_straight ge fn c rs m k rs' m
            /\ Val.lessdef v rs'#(preg_of res)
-           /\ forall r, data_preg r = true -> r <> preg_of res -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r).
+           /\ forall r, data_preg r = true -> r <> preg_of res -> ~ preg_overlap r (preg_of res) -> preg_notin r (destroyed_by_op op) -> rs'#r = rs#r).
   { intros (rs' & A & B & C). subst v; exists rs'; auto. } 
   destruct op; try (apply SAME; eapply transl_op_correct_same; eauto; fail).
 - (* Oaddrstack *)
@@ -1389,7 +1429,7 @@ Lemma transl_load_int_correct:
   exists rs',
       exec_straight ge fn c rs m k rs' m
    /\ rs'#(preg_of dst) = v
-   /\ forall r, data_preg r = true -> r <> preg_of dst -> rs'#r = rs#r.
+   /\ forall r, data_preg r = true -> r <> preg_of dst -> ~ preg_overlap r (preg_of dst) -> rs'#r = rs#r.
 Proof.
   intros. monadInv H. erewrite ireg_of_eq by eauto.
   eapply transl_memory_access_correct; eauto.
@@ -1414,13 +1454,15 @@ Lemma transl_load_single_correct:
   exists rs',
       exec_straight ge fn c rs m k rs' m
    /\ rs'#(preg_of dst) = v
-   /\ forall r, data_preg r = true -> r <> preg_of dst -> rs'#r = rs#r.
+   /\ forall r, data_preg r = true -> r <> preg_of dst -> ~ preg_overlap r (preg_of dst) -> rs'#r = rs#r.
 Proof.
   intros. monadInv H. erewrite sreg_of_eq by eauto.
   eapply transl_memory_access_correct; eauto.
   destruct a; discriminate || trivial.
   intros; simpl. econstructor; split. apply exec_straight_one.
-  rewrite H2. unfold exec_load. rewrite H. rewrite H1. eauto. auto.
+  rewrite H2. unfold exec_load. rewrite H. rewrite H1.
+  instantiate (1 := nextinstr rs1 # (SR x) <- v); auto.
+  unfold nextinstr. Simpl.
   split. Simpl. intros; Simpl.
   simpl; auto.
 Qed.
@@ -1436,13 +1478,15 @@ Lemma transl_load_float_correct:
   exists rs',
       exec_straight ge fn c rs m k rs' m
    /\ rs'#(preg_of dst) = v
-   /\ forall r, data_preg r = true -> r <> preg_of dst -> rs'#r = rs#r.
+   /\ forall r, data_preg r = true -> r <> preg_of dst -> ~ preg_overlap r (preg_of dst) -> rs'#r = rs#r.
 Proof.
   intros. monadInv H. erewrite freg_of_eq by eauto.
   eapply transl_memory_access_correct; eauto.
   destruct a; discriminate || trivial.
   intros; simpl. econstructor; split. apply exec_straight_one.
-  rewrite H2. unfold exec_load. rewrite H. rewrite H1. eauto. auto.
+  rewrite H2. unfold exec_load. rewrite H. rewrite H1.
+  instantiate (1 := nextinstr rs1 # (FR x) <- v); auto.
+  unfold nextinstr. Simpl.
   split. Simpl. intros; Simpl.
   simpl; auto.
 Qed.
@@ -1525,7 +1569,7 @@ Lemma transl_load_correct:
   exists rs',
       exec_straight ge fn c rs m k rs' m
    /\ rs'#(preg_of dst) = v
-   /\ forall r, data_preg r = true -> r <> preg_of dst -> rs'#r = rs#r.
+   /\ forall r, data_preg r = true -> r <> preg_of dst -> ~ preg_overlap r (preg_of dst) -> rs'#r = rs#r.
 Proof.
   intros. destruct chunk; simpl in H.
   eapply transl_load_int_correct; eauto.

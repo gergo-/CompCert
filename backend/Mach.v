@@ -133,14 +133,20 @@ Module Regmap := EMap(RegEq).
 
 Definition regset := Regmap.t val.
 
-Notation "a ## b" := (List.map a b) (at level 1).
-Notation "a # b <- c" := (Regmap.set b c a) (at level 1, b at next level).
-
 Fixpoint undef_regs (rl: list mreg) (rs: regset) {struct rl} : regset :=
   match rl with
   | nil => rs
   | r1 :: rl' => Regmap.set r1 Vundef (undef_regs rl' rs)
   end.
+
+(* Set register [r] to [v] in regset [rs], taking register aliasing into account
+  by first making all of [r]'s aliases undefined. *)
+Definition regmap_set r v rs :=
+  let rs' := undef_regs (subregs r) (undef_regs (superregs r) rs) in
+  Regmap.set r v rs'.
+
+Notation "a ## b" := (List.map a b) (at level 1).
+Notation "a # b <- c" := (regmap_set b c a) (at level 1, b at next level).
 
 Lemma undef_regs_other:
   forall r rl rs, ~In r rl -> undef_regs rl rs r = rs r.
@@ -156,6 +162,23 @@ Proof.
   unfold Regmap.set. destruct (RegEq.eq r a); auto.
 Qed.
 
+Lemma regmap_gso:
+  forall r1 r2 rs v, mreg_diff r1 r2 -> (rs#r1 <- v) r2 = rs r2.
+Proof.
+  intros. unfold mreg_diff, overlap in H. destruct H. apply Decidable.not_or in H0. destruct H0.
+  unfold regmap_set, Regmap.set.
+  destruct (RegEq.eq r2 r1); try congruence.
+  rewrite !undef_regs_other. auto.
+  contradict H0. auto using superregs_subregs.
+  contradict H1. auto using subregs_superregs.
+Qed.
+
+Lemma regmap_gss:
+  forall r rs v, (rs#r <- v) r = v.
+Proof.
+  intros. unfold regmap_set, Regmap.set. destruct (RegEq.eq r r); congruence.
+Qed.
+
 Definition set_pair (p: rpair mreg) (v: val) (rs: regset) : regset :=
   match p with
   | One r => rs#r <- v
@@ -164,7 +187,7 @@ Definition set_pair (p: rpair mreg) (v: val) (rs: regset) : regset :=
 
 Fixpoint set_res (res: builtin_res mreg) (v: val) (rs: regset) : regset :=
   match res with
-  | BR r => Regmap.set r v rs
+  | BR r => rs#r <- v
   | BR_none => rs
   | BR_splitlong hi lo => set_res lo (Val.loword v) (set_res hi (Val.hiword v) rs)
   end.

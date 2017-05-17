@@ -1456,14 +1456,14 @@ Proof.
 - apply parallel_assignment_satisf with (k := Full); auto.
   unfold reg_loc_unconstrained. rewrite H0 by auto. rewrite H1 by auto. auto.
 - destruct res'1; try discriminate. destruct res'2; try discriminate.
-  rename x0 into hi; rename x1 into lo. MonadInv. destruct (mreg_eq hi lo); inv H5.
+  rename x0 into hi; rename x1 into lo. MonadInv. destruct (mreg_eq hi lo). inv m; congruence.
   set (e' := remove_equation {| ekind := High; ereg := x; eloc := R hi |} e0) in *.
   set (e'' := remove_equation {| ekind := Low; ereg := x; eloc := R lo |} e') in *.
   simpl in *. red; intros.
   destruct (OrderedEquation.eq_dec q (Eq Low x (R lo))).
   subst q; simpl. rewrite Regmap.gss. rewrite Locmap.gss. apply Val.loword_lessdef; auto.
   destruct (OrderedEquation.eq_dec q (Eq High x (R hi))).
-  subst q; simpl. rewrite Regmap.gss. rewrite Locmap.gso by (red; auto).
+  subst q; simpl. rewrite Regmap.gss. rewrite Locmap.gso by (red; auto using diff_sym).
   rewrite Locmap.gss. apply Val.hiword_lessdef; auto.
   assert (EqSet.In q e'').
   { unfold e'', e', remove_equation; simpl; ESD.fsetdec. }
@@ -2233,12 +2233,14 @@ Proof.
   rewrite Locmap.gss; auto.
   generalize (loc_result_pair (ef_sig ef)); rewrite RES; intros (A & B & C & D & E). 
   exploit external_call_well_typed; eauto. unfold proj_sig_res; rewrite B. intros WTRES'.
-  rewrite Locmap.gss. rewrite Locmap.gso by (red; auto). rewrite Locmap.gss. 
+  rewrite Locmap.gss. rewrite Locmap.gso by (red; auto using diff_sym). rewrite Locmap.gss.
   rewrite val_longofwords_eq by auto. auto.
   red; intros. rewrite (AG l H0).
   symmetry; apply Locmap.gpo. 
   assert (X: forall r, is_callee_save r = false -> Loc.diff l (R r)).
-  { intros. destruct l; simpl in *. congruence. auto. }
+  { intros. destruct l; simpl in *; auto.
+    destruct (mreg_diff_dec r0 r); auto.
+    apply callee_caller_save_diff. congruence. }
   generalize (loc_result_caller_save (ef_sig ef)). destruct (loc_result (ef_sig ef)); simpl; intuition auto.
   eapply external_call_well_typed; eauto.
 

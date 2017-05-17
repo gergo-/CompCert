@@ -80,30 +80,112 @@ Qed.
 
 Hint Resolve preg_of_not_SP preg_of_not_PC: asmgen.
 
-Lemma nextinstr_pc:
-  forall rs, (nextinstr rs)#PC = Val.offset_ptr rs#PC Ptrofs.one.
+Lemma sub_pregs_correct:
+  forall r, sub_pregs (preg_of r) = map preg_of (subregs r).
 Proof.
-  intros. apply Pregmap.gss.
+  intros. destruct r; reflexivity.
 Qed.
 
-Lemma nextinstr_inv:
-  forall r rs, r <> PC -> (nextinstr rs)#r = rs#r.
+Lemma super_pregs_correct:
+  forall r, super_pregs (preg_of r) = map preg_of (superregs r).
 Proof.
-  intros. unfold nextinstr. apply Pregmap.gso. red; intro; subst. auto.
+  intros. destruct r; reflexivity.
 Qed.
 
-Lemma nextinstr_inv1:
-  forall r rs, data_preg r = true -> (nextinstr rs)#r = rs#r.
+Lemma sub_pregs_super_pregs:
+  forall p1 p2,
+  In p1 (sub_pregs p2) -> In p2 (super_pregs p1).
 Proof.
-  intros. apply nextinstr_inv. red; intro; subst; discriminate.
+  destruct p2; simpl; try tauto.
+  intros. destruct f; simpl in H; decompose [or] H; subst; compute; tauto.
 Qed.
 
-Lemma nextinstr_set_preg:
-  forall rs m v,
-  (nextinstr (rs#(preg_of m) <- v))#PC = Val.offset_ptr rs#PC Ptrofs.one.
+Lemma super_pregs_sub_pregs:
+  forall p1 p2,
+  In p1 (super_pregs p2) -> In p2 (sub_pregs p1).
 Proof.
-  intros. unfold nextinstr. rewrite Pregmap.gss.
-  rewrite Pregmap.gso. auto. apply sym_not_eq. apply preg_of_not_PC.
+  destruct p2; simpl; try tauto.
+  intros. destruct s; simpl in H; decompose [or] H; subst; compute; tauto.
+Qed.
+
+Lemma sub_pregs_of_special_preg:
+  forall p, data_preg p = false -> sub_pregs p = nil.
+Proof.
+  intros. destruct p; simpl in *; congruence.
+Qed.
+
+Lemma super_pregs_of_special_preg:
+  forall p, data_preg p = false -> super_pregs p = nil.
+Proof.
+  intros. destruct p; simpl in *; congruence.
+Qed.
+
+Definition preg_overlap p1 p2 := In p1 (sub_pregs p2) \/ In p1 (super_pregs p2).
+
+Definition preg_diff p1 p2 := p1 <> p2 /\ ~ preg_overlap p1 p2.
+
+Lemma preg_overlap_correct:
+  forall r1 r2, preg_overlap (preg_of r1) (preg_of r2) <-> overlap r1 r2.
+Proof.
+  intros. unfold preg_overlap, overlap. rewrite sub_pregs_correct, super_pregs_correct.
+  split. intros.
+  destruct r2; simpl in *; auto; decompose [or] H; simpl in *; auto using preg_of_injective.
+  intros. destruct H; eapply in_map in H; eauto.
+Qed.
+
+Lemma preg_overlap_sym:
+  forall p1 p2, preg_overlap p1 p2 -> preg_overlap p2 p1.
+Proof.
+  unfold preg_overlap. intros.
+  destruct H; auto using sub_pregs_super_pregs, super_pregs_sub_pregs.
+Qed.
+
+Lemma not_preg_overlap_sym:
+  forall p1 p2, ~ preg_overlap p1 p2 -> ~ preg_overlap p2 p1.
+Proof.
+  auto using preg_overlap_sym.
+Qed.
+
+Lemma preg_of_not_overlap_SP:
+  forall r, ~ preg_overlap SP (preg_of r).
+Proof.
+  intros. destruct r; compute; intros; decompose [or] H; congruence.
+Qed.
+
+Lemma preg_of_not_overlap_PC:
+  forall r, ~ preg_overlap PC (preg_of r).
+Proof.
+  intros. destruct r; compute; intros; decompose [or] H; congruence.
+Qed.
+
+Lemma special_preg_no_overlap:
+  forall p1 p2, data_preg p2 = false -> ~ preg_overlap p1 p2.
+Proof.
+  intros.
+  exploit sub_pregs_of_special_preg; eauto.
+  exploit super_pregs_of_special_preg; eauto.
+  intros; unfold preg_overlap.
+  rewrite H0, H1. tauto.
+Qed.
+
+Definition preg_overlap_dec p1 p2: { preg_overlap p1 p2 } + { ~ preg_overlap p1 p2 }.
+Proof.
+  destruct (data_preg p2) eqn:D.
+  - unfold preg_overlap.
+    destruct (In_dec PregEq.eq p1 (sub_pregs p2)).
+    + left. auto.
+    + destruct (In_dec PregEq.eq p1 (super_pregs p2)); [left; auto | right; tauto].
+  - right. auto using special_preg_no_overlap.
+Defined.
+
+Lemma undef_regs_same:
+  forall r rl rs, In r rl -> undef_regs rl rs r = Vundef.
+Proof.
+  induction rl; simpl; intros. tauto.
+  destruct (PregEq.eq a r).
+  subst; rewrite Pregmap.gss; auto.
+  destruct H. contradiction.
+  rewrite Pregmap.gso; auto.
 Qed.
 
 Lemma undef_regs_other:
@@ -112,7 +194,7 @@ Lemma undef_regs_other:
   undef_regs rl rs r = rs r.
 Proof.
   induction rl; simpl; intros. auto.
-  rewrite IHrl by auto. rewrite Pregmap.gso; auto.
+  rewrite Pregmap.gso; auto.
 Qed.
 
 Fixpoint preg_notin (r: preg) (rl: list mreg) : Prop :=
@@ -143,6 +225,64 @@ Proof.
   intros. apply undef_regs_other. intros.
   exploit list_in_map_inv; eauto. intros [mr [A B]]. subst.
   rewrite preg_notin_charact in H. auto.
+Qed.
+
+Lemma undef_regs_set_other:
+  forall r rl rs r' v,
+  r <> r' ->
+  ~ In r rl ->
+  (Pregmap.set r' v (undef_regs rl rs)) r = rs r.
+Proof.
+  intros. unfold Pregmap.set.
+  destruct (PregEq.eq r r'). contradiction.
+  apply undef_regs_other.
+  intros. contradict H0. subst; auto.
+Qed.
+
+Lemma pregmap_gss:
+  forall rs x v, (rs#x <- v)#x = v.
+Proof.
+  intros. apply Pregmap.gss.
+Qed.
+
+Lemma pregmap_gso:
+  forall rs x y v,
+  x <> y ->
+  ~ preg_overlap x y ->
+  (rs#y <- v)#x = rs#x.
+Proof.
+  intros. apply Decidable.not_or in H0; destruct H0.
+  unfold pregmap_set.
+  rewrite undef_regs_set_other, undef_regs_other; auto.
+  intros. contradict H1. subst; auto.
+Qed.
+
+Lemma nextinstr_pc:
+  forall rs, (nextinstr rs)#PC = Val.offset_ptr rs#PC Ptrofs.one.
+Proof.
+  intros. apply Pregmap.gss.
+Qed.
+
+Lemma nextinstr_inv:
+  forall r rs, r <> PC -> (nextinstr rs)#r = rs#r.
+Proof.
+  intros. unfold nextinstr. apply Pregmap.gso. red; intro; subst. auto.
+Qed.
+
+Lemma nextinstr_inv1:
+  forall r rs, data_preg r = true -> (nextinstr rs)#r = rs#r.
+Proof.
+  intros. apply nextinstr_inv. red; intro; subst; discriminate.
+Qed.
+
+Lemma nextinstr_set_preg:
+  forall rs m v,
+  (nextinstr (rs#(preg_of m) <- v))#PC = Val.offset_ptr rs#PC Ptrofs.one.
+Proof.
+  intros. unfold nextinstr. rewrite pregmap_gss.
+  rewrite pregmap_gso.
+  auto. apply sym_not_eq, preg_of_not_PC.
+  apply preg_of_not_overlap_PC.
 Qed.
 
 (** * Agreement between Mach registers and processor registers *)
@@ -226,11 +366,48 @@ Proof.
   intros. eapply agree_set_mreg; eauto. rewrite Pregmap.gss; auto. intros; apply Pregmap.gso; auto.
 Qed.
 
+Lemma agree_set_mreg_with_aliases:
+  forall ms sp rs r v rs',
+  agree ms sp rs ->
+  Val.lessdef v (rs'#(preg_of r)) ->
+  (forall r', data_preg r' = true -> r' <> (preg_of r) -> ~ preg_overlap r' (preg_of r) -> rs'#r' = rs#r') ->
+  agree (regmap_set r v ms) sp rs'.
+Proof.
+  intros. destruct H. split; auto.
+  rewrite H1; auto. apply sym_not_equal, preg_of_not_SP. apply preg_of_not_overlap_SP.
+  intros. unfold regmap_set, Regmap.set. destruct (RegEq.eq r0 r). congruence.
+
+  destruct (overlap_dec r0 r).
+  - unfold overlap in o. destruct o.
+    + assert (S: superregs r = nil).
+      { destruct (subregs_or_superregs r). rewrite H2 in H. inversion H. auto. }
+      rewrite S. simpl. rewrite Mach.undef_regs_same; auto.
+    + assert (S: subregs r = nil).
+      { destruct (subregs_or_superregs r). auto. rewrite H2 in H. inversion H. }
+      rewrite S. simpl. rewrite Mach.undef_regs_same; auto.
+  - rewrite !Mach.undef_regs_other. rewrite H1. auto. apply preg_of_data.
+    red; intros; elim n. eapply preg_of_injective; eauto.
+    contradict n0. apply preg_overlap_correct; auto.
+    contradict n0. unfold overlap; auto.
+    contradict n0. unfold overlap; auto.
+Qed.
+
 Lemma agree_set_other:
   forall ms sp rs r v,
   agree ms sp rs ->
   data_preg r = false ->
   agree ms sp (rs#r <- v).
+Proof.
+  intros. apply agree_exten with rs. auto.
+  intros. apply pregmap_gso. congruence.
+  apply special_preg_no_overlap; auto.
+Qed.
+
+Lemma agree_set_other':
+  forall ms sp rs r v,
+  agree ms sp rs ->
+  data_preg r = false ->
+  agree ms sp (Pregmap.set r v rs).
 Proof.
   intros. apply agree_exten with rs. auto.
   intros. apply Pregmap.gso. congruence.
@@ -241,31 +418,6 @@ Lemma agree_nextinstr:
   agree ms sp rs -> agree ms sp (nextinstr rs).
 Proof.
   intros. unfold nextinstr. apply agree_set_other. auto. auto.
-Qed.
-
-Lemma agree_set_pair:
-  forall sp p v v' ms rs,
-  agree ms sp rs ->
-  Val.lessdef v v' ->
-  agree (Mach.set_pair p v ms) sp (set_pair (map_rpair preg_of p) v' rs).
-Proof.
-  intros. destruct p; simpl.
-- apply agree_set_mreg_parallel; auto.
-- apply agree_set_mreg_parallel. apply agree_set_mreg_parallel; auto.
-  apply Val.hiword_lessdef; auto. apply Val.loword_lessdef; auto.
-Qed.
-
-Lemma agree_undef_nondata_regs:
-  forall ms sp rl rs,
-  agree ms sp rs ->
-  (forall r, In r rl -> data_preg r = false) ->
-  agree ms sp (undef_regs rl rs).
-Proof.
-  induction rl; simpl; intros. auto.
-  apply IHrl. apply agree_exten with rs; auto.
-  intros. apply Pregmap.gso. red; intros; subst.
-  assert (data_preg a = false) by auto. congruence.
-  intros. apply H0; auto.
 Qed.
 
 Lemma agree_undef_regs:
@@ -285,18 +437,85 @@ Proof.
   exploit preg_of_injective; eauto. congruence.
 Qed.
 
+Lemma agree_undef_regs_undef_pregs:
+  forall ms sp rl rs,
+  agree ms sp rs ->
+  agree (Mach.undef_regs rl ms) sp (undef_regs (map preg_of rl) rs).
+Proof.
+  intros.
+  induction rl. simpl; auto.
+  simpl. apply agree_set_mreg_parallel; auto.
+Qed.
+
+Lemma agree_undef_nondata_regs:
+  forall ms sp rl rs,
+  agree ms sp rs ->
+  (forall r, In r rl -> data_preg r = false) ->
+  agree ms sp (undef_regs rl rs).
+Proof.
+  induction rl; simpl; intros. auto.
+  assert (data_preg a = false) by auto.
+  apply agree_set_other'; auto.
+Qed.
+
+Lemma agree_set_pair:
+  forall sp p v v' ms rs,
+  agree ms sp rs ->
+  Val.lessdef v v' ->
+  agree (Mach.set_pair p v ms) sp (set_pair (map_rpair preg_of p) v' rs).
+Proof.
+  intros. destruct p; simpl.
+- apply agree_set_mreg_parallel; auto.
+  rewrite sub_pregs_correct, super_pregs_correct. repeat apply agree_undef_regs_undef_pregs; auto.
+- apply agree_set_mreg_parallel.
+  rewrite sub_pregs_correct, super_pregs_correct. repeat apply agree_undef_regs_undef_pregs; auto.
+  apply agree_set_mreg_parallel; auto.
+  rewrite sub_pregs_correct, super_pregs_correct. repeat apply agree_undef_regs_undef_pregs; auto.
+  apply Val.hiword_lessdef; auto. apply Val.loword_lessdef; auto.
+Qed.
+
 Lemma agree_set_undef_mreg:
   forall ms sp rs r v rl rs',
   agree ms sp rs ->
   Val.lessdef v (rs'#(preg_of r)) ->
-  (forall r', data_preg r' = true -> r' <> preg_of r -> preg_notin r' rl -> rs'#r' = rs#r') ->
+  (forall r', data_preg r' = true -> r' <> (preg_of r) -> preg_notin r' rl -> rs'#r' = rs#r') ->
   agree (Regmap.set r v (Mach.undef_regs rl ms)) sp rs'.
 Proof.
-  intros. apply agree_set_mreg with (rs'#(preg_of r) <- (rs#(preg_of r))); auto.
+  intros.
+  apply agree_set_mreg with (rs := Pregmap.set (preg_of r) (rs#(preg_of r)) rs'); auto.
   apply agree_undef_regs with rs; auto.
   intros. unfold Pregmap.set. destruct (PregEq.eq r' (preg_of r)).
   congruence. auto.
   intros. rewrite Pregmap.gso; auto.
+Qed.
+
+Lemma agree_set_undef_mreg_with_aliases:
+  forall ms sp rs r v rl rs',
+  agree ms sp rs ->
+  Val.lessdef v (rs'#(preg_of r)) ->
+  (forall r', data_preg r' = true -> r' <> (preg_of r) -> ~ preg_overlap r' (preg_of r) -> preg_notin r' rl -> rs'#r' = rs#r') ->
+  agree (regmap_set r v (Mach.undef_regs rl ms)) sp rs'.
+Proof.
+  intros. destruct H. split; auto.
+  rewrite H1; auto using preg_of_not_overlap_SP with asmgen.
+  apply preg_notin_charact; auto using preg_of_not_overlap_SP with asmgen.
+  intros. unfold regmap_set, Regmap.set. destruct (RegEq.eq r0 r). congruence.
+
+  destruct (overlap_dec r0 r).
+  - unfold overlap in o. destruct o.
+    + assert (S: superregs r = nil).
+      { destruct (subregs_or_superregs r). rewrite H2 in H. inversion H. auto. }
+      rewrite S. simpl. rewrite Mach.undef_regs_same; auto.
+    + assert (S: subregs r = nil).
+      { destruct (subregs_or_superregs r). auto. rewrite H2 in H. inversion H. }
+      rewrite S. simpl. rewrite Mach.undef_regs_same; auto.
+  - unfold overlap in n0. rewrite Mach.undef_regs_other, Mach.undef_regs_other; auto.
+    destruct (in_dec mreg_eq r0 rl).
+    + rewrite Mach.undef_regs_same; auto.
+    + rewrite Mach.undef_regs_other; auto. rewrite H1. auto. apply preg_of_data.
+      red; intros; elim n. eapply preg_of_injective; eauto.
+      contradict n0. apply preg_overlap_correct; auto.
+      apply preg_notin_charact; intros. contradict n1. apply preg_of_injective in n1. congruence.
 Qed.
 
 Lemma agree_change_sp:
@@ -305,7 +524,8 @@ Lemma agree_change_sp:
   agree ms sp' (rs#SP <- sp').
 Proof.
   intros. inv H. split; auto.
-  intros. rewrite Pregmap.gso; auto with asmgen.
+  intros. rewrite pregmap_gso; auto with asmgen.
+  compute; tauto.
 Qed.
 
 (** Connection between Mach and Asm calling conventions for external
@@ -396,8 +616,10 @@ Lemma agree_set_res:
   agree (Mach.set_res res v ms) sp (Asm.set_res (map_builtin_res preg_of res) v' rs).
 Proof.
   induction res; simpl; intros.
-- eapply agree_set_mreg; eauto. rewrite Pregmap.gss. auto.
-  intros. apply Pregmap.gso; auto.
+- unfold regmap_set, pregmap_set.
+  apply agree_set_mreg_parallel; auto.
+  rewrite sub_pregs_correct, super_pregs_correct.
+  repeat apply agree_undef_regs_undef_pregs; auto.
 - auto.
 - apply IHres2. apply IHres1. auto.
   apply Val.hiword_lessdef; auto.
@@ -410,7 +632,9 @@ Lemma set_res_other:
   set_res (map_builtin_res preg_of res) v rs r = rs r.
 Proof.
   induction res; simpl; intros.
-- apply Pregmap.gso. red; intros; subst r. rewrite preg_of_data in H; discriminate.
+- apply pregmap_gso. red; intros; subst r. rewrite preg_of_data in H; discriminate.
+  unfold not; intros. apply preg_overlap_sym in H0.
+  eapply special_preg_no_overlap in H; eauto.
 - auto.
 - rewrite IHres2, IHres1; auto.
 Qed.
