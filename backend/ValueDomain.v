@@ -534,7 +534,8 @@ Inductive aval : Type :=
   | F (f: float)             (**r exactly [Vfloat f] *)
   | FS (f: float32)          (**r exactly [Vsingle f] *)
   | Ptr (p: aptr)            (**r a pointer from the set [p], or [Vundef] *)
-  | Ifptr (p: aptr).         (**r a pointer from the set [p], or a number, or [Vundef] *)
+  | Ifptr (p: aptr)          (**r a pointer from the set [p], or a number, or [Vundef] *)
+  | W (ws: vpair).           (**r a pair of words *)
 
 (** The "top" of the value domain is defined as any pointer, or any
     number, or [Vundef]. *)
@@ -548,7 +549,8 @@ Definition Vtop := Ifptr Ptop.
 
 Definition eq_aval: forall (v1 v2: aval), {v1=v2} + {v1<>v2}.
 Proof.
-  intros. generalize zeq Int.eq_dec Int64.eq_dec Float.eq_dec Float32.eq_dec eq_aptr; intros.
+  intros. generalize zeq Int.eq_dec Int64.eq_dec Float.eq_dec Float32.eq_dec eq_aptr Word.eq; intros.
+  decide equality.
   decide equality.
 Defined.
 
@@ -568,12 +570,14 @@ Inductive vmatch : val -> aval -> Prop :=
   | vmatch_s: forall f, vmatch (Vsingle f) (FS f)
   | vmatch_ptr: forall b ofs p, pmatch b ofs p -> vmatch (Vptr b ofs) (Ptr p)
   | vmatch_ptr_undef: forall p, vmatch Vundef (Ptr p)
+  | vmatch_w: forall ws, vmatch (Vpair ws) (W ws)
   | vmatch_ifptr_undef: forall p, vmatch Vundef (Ifptr p)
   | vmatch_ifptr_i: forall i p, vmatch (Vint i) (Ifptr p)
   | vmatch_ifptr_l: forall i p, vmatch (Vlong i) (Ifptr p)
   | vmatch_ifptr_f: forall f p, vmatch (Vfloat f) (Ifptr p)
   | vmatch_ifptr_s: forall f p, vmatch (Vsingle f) (Ifptr p)
-  | vmatch_ifptr_p: forall b ofs p, pmatch b ofs p -> vmatch (Vptr b ofs) (Ifptr p).
+  | vmatch_ifptr_p: forall b ofs p, pmatch b ofs p -> vmatch (Vptr b ofs) (Ifptr p)
+  | vmatch_ifptr_w: forall ws p, vmatch (Vpair ws) (Ifptr p).
 
 Lemma vmatch_ifptr:
   forall v p,
@@ -818,6 +822,7 @@ Inductive vge: aval -> aval -> Prop :=
   | vge_l: forall i, vge (L i) (L i)
   | vge_f: forall f, vge (F f) (F f)
   | vge_s: forall f, vge (FS f) (FS f)
+  | vge_w: forall ws, vge (W ws) (W ws)
   | vge_uns_i: forall p n i, 0 <= n -> is_uns n i -> vge (Uns p n) (I i)
   | vge_uns_uns: forall p1 n1 p2 n2, n1 >= n2 -> pge p1 p2 -> vge (Uns p1 n1) (Uns p2 n2)
   | vge_sgn_i: forall p n i, 0 < n -> is_sgn n i -> vge (Sgn p n) (I i)
@@ -830,6 +835,7 @@ Inductive vge: aval -> aval -> Prop :=
   | vge_ip_l: forall p i, vge (Ifptr p) (L i)
   | vge_ip_f: forall p f, vge (Ifptr p) (F f)
   | vge_ip_s: forall p f, vge (Ifptr p) (FS f)
+  | vge_ip_w: forall p ws, vge (Ifptr p) (W ws)
   | vge_ip_uns: forall p q n, pge p q -> vge (Ifptr p) (Uns q n)
   | vge_ip_sgn: forall p q n, pge p q -> vge (Ifptr p) (Sgn q n).
 
@@ -887,6 +893,10 @@ Definition vlub (v w: aval) : aval :=
       if Float32.eq_dec f1 f2 then v else ntop
   | L i1, L i2 =>
       if Int64.eq i1 i2 then v else ntop
+  | W (HI w1), W (HI w2) | W (LO w1), W (LO w2) =>
+      if Word.eq w1 w2 then v else ntop
+  | W (HI_LO hi lo), W (HI_LO hi' lo') =>
+      if Word.eq hi hi' && Word.eq lo lo' then v else ntop
   | Ptr p1, Ptr p2 => Ptr(plub p1 p2)
   | Ptr p1, Ifptr p2 => Ifptr(plub p1 p2)
   | Ifptr p1, Ptr p2 => Ifptr(plub p1 p2)
@@ -900,7 +910,7 @@ Definition vlub (v w: aval) : aval :=
 Lemma vlub_comm:
   forall v w, vlub v w = vlub w v.
 Proof.
-  intros. unfold vlub; destruct v; destruct w; auto.
+  intros. unfold vlub; destruct v; destruct w; try (destruct (ws: vpair) || destruct (ws0: vpair)); auto.
 - rewrite Int.eq_sym. predSpec Int.eq Int.eq_spec n0 n.
   congruence.
   rewrite orb_comm.
@@ -924,6 +934,11 @@ Proof.
 - f_equal; apply plub_comm.
 - f_equal; apply plub_comm.
 - f_equal; apply plub_comm.
+- destruct ws0; auto. rewrite dec_eq_sym. destruct (Word.eq hi0 hi); subst; auto.
+- destruct ws0; auto. rewrite dec_eq_sym. destruct (Word.eq lo0 lo); subst; auto.
+- destruct ws0; auto. rewrite !andb_if; unfold proj_sumbool.
+  rewrite dec_eq_sym. destruct (Word.eq hi0 hi); subst; auto.
+  rewrite dec_eq_sym. destruct (Word.eq lo0 lo); subst; auto.
 Qed.
 
 Lemma vge_uns_uns': forall p n, vge (uns p n) (Uns p n).
@@ -971,7 +986,7 @@ Lemma vge_lub_l:
 Proof.
   assert (IFSTRICT: forall (cond: bool) x1 x2 y, vge x1 y -> vge x2 y -> vge (if cond then x1 else x2) y).
   { destruct cond; auto with va. }
-  unfold vlub; destruct x, y; eauto using pge_lub_l with va.
+  unfold vlub; destruct x, y; try destruct (ws: vpair); eauto using pge_lub_l with va.
 - predSpec Int.eq Int.eq_spec n n0. auto with va.
   destruct (Int.lt n Int.zero || Int.lt n0 Int.zero).
   apply vge_sgn_i'. generalize (ssize_pos n); xomega. eauto with va.
@@ -992,6 +1007,12 @@ Proof.
 - destruct (Int64.eq n n0); constructor.
 - destruct (Float.eq_dec f f0); constructor.
 - destruct (Float32.eq_dec f f0); constructor.
+- destruct ws0; try constructor.
+  destruct (Word.eq hi hi0); constructor.
+- destruct ws0; try constructor.
+  destruct (Word.eq lo lo0); constructor.
+- destruct ws0; try constructor.
+  destruct (Word.eq hi hi0), (Word.eq lo lo0); constructor.
 Qed.
 
 Lemma vge_lub_r:
@@ -2963,6 +2984,9 @@ Proof with (auto using provenance_monotone with va).
 - constructor... apply is_zero_ext_uns...
 - constructor... apply is_sign_ext_sgn...
 - constructor... apply is_zero_ext_uns...
+- unfold provenance; destruct (va_strict tt)...
+- unfold provenance; destruct (va_strict tt)...
+- unfold provenance; destruct (va_strict tt)...
 - unfold provenance; destruct (va_strict tt)...
 - unfold provenance; destruct (va_strict tt)...
 - unfold provenance; destruct (va_strict tt)...

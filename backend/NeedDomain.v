@@ -378,7 +378,7 @@ Ltac InvAgree :=
   auto || exact Logic.I ||
   match goal with
   | [ H: False |- _ ] => contradiction
-  | [ H: match ?v with Vundef => _ | Vint _ => _ | Vlong _ => _ | Vfloat _ => _ | Vsingle _ => _ | Vptr _ _ => _ end |- _ ] => destruct v
+  | [ H: match ?v with Vundef => _ | Vint _ => _ | Vlong _ => _ | Vfloat _ => _ | Vsingle _ => _ | Vptr _ _ => _ | Vpair _ => _ end |- _ ] => destruct v
   | [ |- context [if Archi.ptr64 then _ else _] ] => destruct Archi.ptr64 eqn:?
   end).
 

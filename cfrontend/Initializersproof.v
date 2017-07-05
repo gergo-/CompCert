@@ -625,6 +625,8 @@ Proof.
 - (* single *)
   destruct ty; try discriminate.
   destruct f1; inv EQ0; simpl in H2; inv H2; assumption.
+  (* word pair *)
+- destruct ty; try discriminate.
 - (* pointer *)
   unfold inj in H.
   assert (data = Init_addrof b1 ofs1 /\ chunk = Mptr).
@@ -664,6 +666,7 @@ Local Transparent sizeof.
   destruct Archi.ptr64 eqn:SF; inv H0. simpl. rewrite SF; auto.
   destruct ptr64; inv EQ0. simpl. rewrite <- Heqptr64; auto.
   inv EQ0. unfold init_data_size, sizeof. auto.
+- destruct ty; try discriminate.
 Qed.
 
 Notation idlsize := init_data_list_size.

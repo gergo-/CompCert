@@ -190,6 +190,8 @@ let print_typed_value p v ty =
       fprintf p "<ptr%a>" !print_pointer_hook (b, ofs)
   | Vundef, _ ->
       fprintf p "<undef>"
+  | Vpair _, _ ->
+      fprintf p "<pair>"
 
 let print_value p v = print_typed_value p v Tvoid
 

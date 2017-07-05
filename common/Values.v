@@ -24,13 +24,35 @@ Require Import Floats.
 Definition block : Type := positive.
 Definition eq_block := peq.
 
+(** A "word-sized" value is either:
+- a 32-bit machine integer [int];
+- a 32-bit floating-point number [single];
+- a pointer: a pair of a memory address and an integer offset with respect
+  to this address.
+
+Whether pointers can actually be stored in a word depends on [Archi.ptr64].
+*)
+
+Inductive word_val: Type :=
+  | Wint: int -> word_val
+  | Wsingle: float32 -> word_val
+  | Wptr: block -> ptrofs -> word_val.
+
+(** A pair of words. One of the components may be undefined, in which case we
+only store the defined part. *)
+Inductive vpair: Type :=
+  | HI (hi: word_val)
+  | LO (lo: word_val)
+  | HI_LO (hi lo: word_val).
+
 (** A value is either:
 - a machine integer;
 - a floating-point number;
 - a pointer: a pair of a memory address and an integer offset with respect
   to this address;
 - the [Vundef] value denoting an arbitrary bit pattern, such as the
-  value of an uninitialized variable.
+  value of an uninitialized variable;
+- a pair of words.
 *)
 
 Inductive val: Type :=
@@ -39,7 +61,8 @@ Inductive val: Type :=
   | Vlong: int64 -> val
   | Vfloat: float -> val
   | Vsingle: float32 -> val
-  | Vptr: block -> ptrofs -> val.
+  | Vptr: block -> ptrofs -> val
+  | Vpair: vpair -> val.
 
 Definition Vzero: val := Vint Int.zero.
 Definition Vone: val := Vint Int.one.
@@ -54,6 +77,36 @@ Definition Vnullptr :=
 Definition Vptrofs (n: ptrofs) :=
   if Archi.ptr64 then Vlong (Ptrofs.to_int64 n) else Vint (Ptrofs.to_int n).
 
+(** * Operations over word values *)
+
+Module Word.
+
+Definition eq (x y: word_val): {x=y} + {x<>y}.
+Proof.
+  decide equality.
+  apply Int.eq_dec.
+  apply Float32.eq_dec.
+  apply Ptrofs.eq_dec.
+  apply eq_block.
+Defined.
+
+Definition value (w: word_val): val :=
+  match w with
+  | Wint i => Vint i
+  | Wsingle s => Vsingle s
+  | Wptr b ofs => Vptr b ofs
+  end.
+
+Definition of_value (v: val): option word_val :=
+  match v with
+  | Vundef => None
+  | Vint i => Some (Wint i)
+  | Vsingle s => Some (Wsingle s)
+  | Vptr p ofs => if Archi.ptr64 then None else Some (Wptr p ofs)
+  | _ => None
+  end.
+
+End Word.
 (** * Operations over values *)
 
 (** The module [Val] defines a number of arithmetic and logical operations
@@ -71,6 +124,7 @@ Proof.
   apply Float32.eq_dec.
   apply Ptrofs.eq_dec.
   apply eq_block.
+  decide equality; apply Word.eq.
 Defined.
 Global Opaque eq.
 
@@ -315,6 +369,48 @@ Definition floatofsingle (v: val) : val :=
   match v with
   | Vsingle f => Vfloat (Float.of_single f)
   | _ => Vundef
+  end.
+
+Definition pair_hi_word (v: val) : option word_val :=
+  match v with
+  | Vpair (HI hi) | Vpair (HI_LO hi _) => Some hi
+  | _ => None
+  end.
+
+Definition pair_hi (v: val) : val :=
+  match pair_hi_word v with
+  | Some hi => Word.value hi
+  | None => Vundef
+  end.
+
+Definition pair_lo_word (v: val) : option word_val :=
+  match v with
+  | Vpair (LO lo) | Vpair (HI_LO _ lo) => Some lo
+  | _ => None
+  end.
+
+Definition pair_lo (v: val) : val :=
+  match pair_lo_word v with
+  | Some lo => Word.value lo
+  | None => Vundef
+  end.
+
+Definition pair_set_hi (v hi: val) : val :=
+  match v, Word.of_value hi with
+  | Vpair (LO lo),      Some hi => Vpair (HI_LO hi lo)
+  | Vpair (HI_LO _ lo), Some hi => Vpair (HI_LO hi lo)
+  | Vpair (LO lo), _ | Vpair (HI_LO _ lo), None => Vpair (LO lo)
+  | _, Some hi => Vpair (HI hi)
+  | _, _ => Vundef
+  end.
+
+Definition pair_set_lo (v lo: val) : val :=
+  match v, Word.of_value lo with
+  | Vpair (HI hi),      Some lo => Vpair (HI_LO hi lo)
+  | Vpair (HI_LO hi _), Some lo => Vpair (HI_LO hi lo)
+  | Vpair (HI hi), _ | Vpair (HI_LO hi _), None => Vpair (HI hi)
+  | _, Some lo => Vpair (LO lo)
+  | _, _ => Vundef
   end.
 
 Definition add (v1 v2: val): val :=
@@ -1863,6 +1959,93 @@ Proof.
   unfold cmp; simpl. destruct (Int.lt i Int.zero); auto.
 Qed.
 
+(** Insertion and extraction of paired values. *)
+
+Remark word_of_value_32bit:
+  forall v w, Word.of_value v = Some w -> has_type v Tany32.
+Proof.
+  intros. destruct v; simpl; auto; inv H.
+Qed.
+
+Lemma pair_hi_word_inv:
+  forall v hi,
+  pair_hi_word v = Some hi ->
+  v = Vpair (HI hi) \/ exists lo, v = Vpair (HI_LO hi lo).
+Proof.
+  intros. destruct v; inversion H. destruct v; inversion H; eauto.
+Qed.
+
+Lemma pair_hi_inv:
+  forall v,
+  pair_hi v <> Vundef ->
+  exists hi, (v = Vpair (HI hi) \/ exists lo, v = Vpair (HI_LO hi lo)).
+Proof.
+  intros.
+  destruct (pair_hi_word v) eqn: E.
+  - eauto using pair_hi_word_inv.
+  - destruct v; destruct H; auto.
+    destruct v; simpl in *; inversion E. auto.
+Qed.
+
+Lemma pair_lo_word_inv:
+  forall v lo,
+  pair_lo_word v = Some lo ->
+  v = Vpair (LO lo) \/ exists hi, v = Vpair (HI_LO hi lo).
+Proof.
+  intros. destruct v; inversion H. destruct v; inversion H; eauto.
+Qed.
+
+Lemma pair_lo_inv:
+  forall v,
+  pair_lo v <> Vundef ->
+  exists lo, (v = Vpair (LO lo) \/ exists hi, v = Vpair (HI_LO hi lo)).
+Proof.
+  intros.
+  destruct (pair_lo_word v) eqn: E.
+  - eauto using pair_lo_word_inv.
+  - destruct v; destruct H; auto.
+    destruct v; simpl in *; inversion E. auto.
+Qed.
+
+Lemma pair_set_hi_get_hi:
+  forall v v', has_type v' Tany32 -> pair_hi (pair_set_hi v v') = v'.
+Proof.
+  intros. destruct v, v'; inversion H; auto; try destruct v; auto.
+Qed.
+
+Lemma pair_set_lo_get_lo:
+  forall v v', has_type v' Tany32 -> pair_lo (pair_set_lo v v') = v'.
+Proof.
+  intros. destruct v, v'; inversion H; auto; try destruct v; auto.
+Qed.
+
+Lemma pair_set_lo_get_hi_word:
+  forall v hi v', pair_hi_word v = Some hi -> pair_hi_word (pair_set_lo v v') = Some hi.
+Proof.
+  intros.
+  destruct (pair_hi_word_inv _ _ H).
+  - subst; destruct v'; auto.
+  - destruct H0. subst; destruct v'; auto.
+Qed.
+
+Lemma pair_set_lo_get_hi:
+  forall v v', pair_hi (pair_set_lo v v') = pair_hi v.
+Proof.
+  intros.
+  destruct v; simpl; destruct (Word.of_value v'); compute; auto.
+  destruct v; simpl; auto.
+  destruct v; simpl; auto.
+Qed.
+
+Lemma pair_set_hi_get_lo:
+  forall v v', pair_lo (pair_set_hi v v') = pair_lo v.
+Proof.
+  intros.
+  destruct v; simpl; destruct (Word.of_value v'); compute; auto.
+  destruct v; simpl; auto.
+  destruct v; simpl; auto.
+Qed.
+
 (** The ``is less defined'' relation between values.
     A value is less defined than itself, and [Vundef] is
     less defined than any value. *)
@@ -2078,6 +2261,8 @@ Inductive inject (mi: meminj): val -> val -> Prop :=
       forall f, inject mi (Vfloat f) (Vfloat f)
   | inject_single:
       forall f, inject mi (Vsingle f) (Vsingle f)
+  | inject_pair:
+      forall f, inject mi (Vpair f) (Vpair f)
   | inject_ptr:
       forall b1 ofs1 b2 ofs2 delta,
       mi b1 = Some (b2, delta) ->

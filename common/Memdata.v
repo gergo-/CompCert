@@ -491,6 +491,9 @@ Definition decode_encode_val (v1: val) (chunk1 chunk2: memory_chunk) (v2: val) :
   | Vsingle f, Many64, Many64 => v2 = Vsingle f
   | Vsingle f, (Mint8signed|Mint8unsigned|Mint16signed|Mint16unsigned|Mint32|Mint64|Mfloat64|Many64), _ => v2 = Vundef
   | Vsingle f, _, _ => True (* nothing interesting to say about v2 *)
+  | Vpair p, Many64, Many64 => v2 = Vpair p
+  | Vpair p, (Mint8signed|Mint8unsigned|Mint16signed|Mint16unsigned|Mint32|Mfloat32|Mint64|Mfloat64|Many32), _ => v2 = Vundef
+  | Vpair p, _, _ => True (* nothing interesting to say about v2 *)
   end.
 
 Remark decode_val_undef:
