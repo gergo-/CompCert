@@ -54,7 +54,7 @@ Fixpoint constval (ce: composite_env) (a: expr) : res val :=
   | Eval v ty =>
       match v with
       | Vint _ | Vfloat _ | Vsingle _ | Vlong _ => OK v
-      | Vptr _ _ | Vundef => Error(msg "illegal constant")
+      | Vptr _ _ | Vpair _ | Vundef => Error(msg "illegal constant")
       end
   | Evalof l ty =>
       match access_mode ty with

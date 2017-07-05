@@ -1451,6 +1451,7 @@ Lemma cast_bool_bool_val:
   destruct f; auto.
   destruct (Float32.cmp Ceq f0 Float32.zero); auto.
   destruct f; auto. 
+  destruct f; auto.
   destruct ptr64; auto.
   destruct (Int.eq i Int.zero); auto.
   destruct ptr64; auto.
@@ -1461,12 +1462,6 @@ Lemma cast_bool_bool_val:
   destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
   destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
   destruct ptr64; auto.
-  destruct ptr64; auto. destruct (Int.eq i Int.zero); auto.
-  destruct ptr64; auto. destruct (Int64.eq i Int64.zero); auto.
-  destruct ptr64; auto.
-  destruct ptr64; auto.
-  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
-  destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
   destruct ptr64; auto.
   destruct ptr64; auto. destruct (Int.eq i Int.zero); auto.
   destruct ptr64; auto. destruct (Int64.eq i Int64.zero); auto.
@@ -1474,6 +1469,15 @@ Lemma cast_bool_bool_val:
   destruct ptr64; auto.
   destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
   destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
+  destruct ptr64; auto.
+  destruct ptr64; auto.
+  destruct ptr64; auto. destruct (Int.eq i Int.zero); auto.
+  destruct ptr64; auto. destruct (Int64.eq i Int64.zero); auto.
+  destruct ptr64; auto.
+  destruct ptr64; auto.
+  destruct ptr64; auto. destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
+  destruct (Mem.weak_valid_pointer m b (Ptrofs.unsigned i)); auto.
+  destruct ptr64; auto.
 Qed.
 
 (** Relation between Boolean value and Boolean negation. *)
