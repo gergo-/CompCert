@@ -349,7 +349,7 @@ Definition sel_val (k: equation_kind) (v: val) : val :=
   is less defined than [ls l] (the value of [l] in the LTL code). *)
 
 Definition satisf (rs: regset) (ls: locset) (e: eqs) : Prop :=
-  forall q, EqSet.In q e -> Val.lessdef (sel_val (ekind q) rs#(ereg q)) (ls (eloc q)).
+  forall q, EqSet.In q e -> Val.lessdef (sel_val (ekind q) rs#(ereg q)) (ls @ (eloc q)).
 
 Lemma empty_eqs_satisf:
   forall rs ls, satisf rs ls empty_eqs.
@@ -375,7 +375,7 @@ Qed.
 
 Lemma add_equation_lessdef:
   forall rs ls q e,
-  satisf rs ls (add_equation q e) -> Val.lessdef (sel_val (ekind q) rs#(ereg q)) (ls (eloc q)).
+  satisf rs ls (add_equation q e) -> Val.lessdef (sel_val (ekind q) rs#(ereg q)) (ls @ (eloc q)).
 Proof.
   intros. apply H. unfold add_equation. simpl. apply EqSet.add_1. auto.
 Qed.
@@ -986,7 +986,7 @@ Lemma subst_loc_satisf:
   well_typed_move env dst e = true ->
   wt_regset env rs ->
   satisf rs ls e' ->
-  satisf rs (Locmap.set dst (ls src) ls) e.
+  satisf rs (Locmap.set dst (ls @ src) ls) e.
 Proof.
   intros; red; intros.
   exploit in_subst_loc; eauto. intros [[A B] | [A B]].
@@ -1012,7 +1012,7 @@ Qed.
 
 Lemma undef_regs_outside:
   forall ml ls l,
-  Loc.notin l (map R ml) -> undef_regs ml ls l = ls l.
+  Loc.notin l (map R ml) -> (undef_regs ml ls) @ l = ls @ l.
 Proof.
   induction ml; simpl; intros. auto.
   rewrite Locmap.gso. apply IHml. tauto. apply Loc.diff_sym. tauto.
@@ -1048,7 +1048,7 @@ Lemma subst_loc_undef_satisf:
   can_undef_except dst ml e = true ->
   wt_regset env rs ->
   satisf rs ls e' ->
-  satisf rs (Locmap.set dst (ls src) (undef_regs ml ls)) e.
+  satisf rs (Locmap.set dst (ls @ src) (undef_regs ml ls)) e.
 Proof.
   intros; red; intros.
   exploit in_subst_loc; eauto. intros [[A B] | [A B]].
@@ -1101,13 +1101,13 @@ Definition callee_save_loc (l: loc) :=
   end.
 
 Definition agree_callee_save (ls1 ls2: locset) : Prop :=
-  forall l, callee_save_loc l -> ls1 l = ls2 l.
+  forall l, callee_save_loc l -> ls1 @ l = ls2 @ l.
 
 Lemma return_regs_agree_callee_save:
   forall caller callee,
   agree_callee_save caller (return_regs caller callee).
 Proof.
-  intros; red; intros. unfold return_regs. red in H.
+  intros; red; intros. unfold Locmap.get, return_regs. red in H.
   destruct l.
   rewrite H; auto. 
   destruct sl; auto || congruence.
@@ -1234,9 +1234,9 @@ Proof.
   red; intros. rewrite Regmap.gsspec. destruct (peq (ereg q) r1).
   exploit compat_left2_sound; eauto.
   intros [[A B] | [A B]]; rewrite A; rewrite B; simpl.
-  apply Val.lessdef_trans with (Val.hiword (Val.longofwords (ls l1) (ls l2))).
+  apply Val.lessdef_trans with (Val.hiword (Val.longofwords (ls @ l1) (ls @ l2))).
   apply Val.hiword_lessdef; auto. apply val_hiword_longofwords.
-  apply Val.lessdef_trans with (Val.loword (Val.longofwords (ls l1) (ls l2))).
+  apply Val.lessdef_trans with (Val.loword (Val.longofwords (ls @ l1) (ls @ l2))).
   apply Val.loword_lessdef; auto. apply val_loword_longofwords.
   eapply IHb; eauto.
 - (* error case *)
@@ -1253,8 +1253,8 @@ Proof.
   assert (A: forall l, loc_argument_acceptable l -> call_regs ls (parameter_of_argument l) = ls l).
   { destruct l as [r | [] ofs ty]; simpl; auto; contradiction. }
   exploit loc_arguments_acceptable; eauto. destruct x; simpl; intros.
-- auto.
-- destruct H0; f_equal; auto.
+- unfold Locmap.get. rewrite A; auto.
+- unfold Locmap.get. destruct H0; f_equal; rewrite A; auto.
 Qed.
 
 Lemma return_regs_arg_values:
@@ -1269,7 +1269,7 @@ Proof.
   apply Locmap.getpair_exten; intros.
   assert (In l (regs_of_rpairs (loc_arguments sg))) by (eapply in_regs_of_rpairs; eauto).
   exploit loc_arguments_acceptable_2; eauto. exploit H; eauto. 
-  destruct l; simpl; intros; try contradiction. rewrite H4; auto.
+  destruct l; simpl; intros; try contradiction. unfold Locmap.get, return_regs. rewrite H4; auto.
 Qed.
 
 Lemma find_function_tailcall:
@@ -1279,7 +1279,7 @@ Lemma find_function_tailcall:
 Proof.
   unfold ros_compatible_tailcall, find_function; intros.
   destruct ros as [r|id]; auto.
-  unfold return_regs. destruct (is_callee_save r). discriminate. auto.
+  unfold Locmap.get, return_regs. destruct (is_callee_save r). discriminate. auto.
 Qed.
 
 Lemma loadv_int64_split:
@@ -1315,15 +1315,15 @@ Lemma add_equations_builtin_arg_lessdef:
   add_equations_builtin_arg env arg arg' e = Some e' ->
   satisf rs ls e' ->
   wt_regset env rs ->
-  exists v', eval_builtin_arg ge ls sp m arg' v' /\ Val.lessdef v v'.
+  exists v', eval_builtin_arg ge (Locmap.read ls) sp m arg' v' /\ Val.lessdef v v'.
 Proof.
   induction 1; simpl; intros e e' arg' AE SAT WT; destruct arg'; MonadInv.
 - exploit add_equation_lessdef; eauto. simpl; intros.
-  exists (ls x0); auto with barg.
+  exists (ls @ x0); econstructor; auto with barg; econstructor.
 - destruct arg'1; MonadInv. destruct arg'2; MonadInv.
   exploit add_equation_lessdef. eauto. simpl; intros LD1.
   exploit add_equation_lessdef. eapply add_equation_satisf. eauto. simpl; intros LD2.
-  exists (Val.longofwords (ls x0) (ls x1)); split; auto with barg.
+  exists (Val.longofwords (ls @ x0) (ls @ x1)); split; auto with barg. econstructor; econstructor.
   rewrite <- (val_longofwords_eq rs#x). apply Val.longofwords_lessdef; auto.
   rewrite <- e0; apply WT.
   assumption.
@@ -1357,14 +1357,15 @@ Lemma add_equations_builtin_args_lessdef:
   satisf rs ls e' ->
   wt_regset env rs ->
   Mem.extends m tm ->
-  exists vl', eval_builtin_args ge ls sp tm arg' vl' /\ Val.lessdef_list vl vl'.
+  exists vl', eval_builtin_args ge (Locmap.read ls) sp tm arg' vl' /\ Val.lessdef_list vl vl'.
 Proof.
   induction 1; simpl; intros; destruct arg'; MonadInv.
 - exists (@nil val); split; constructor.
 - exploit IHlist_forall2; eauto. intros (vl' & A & B).
   exploit add_equations_builtin_arg_lessdef; eauto.
   eapply add_equations_builtin_args_satisf; eauto. intros (v1' & C & D).
-  exploit (@eval_builtin_arg_lessdef _ ge ls ls); eauto. intros (v1'' & E & F).
+  exploit (@eval_builtin_arg_lessdef _ ge (Locmap.read ls) (Locmap.read ls)); eauto.
+  intros (v1'' & E & F).
   exists (v1'' :: vl'); split; constructor; auto. eapply Val.lessdef_trans; eauto.
 Qed.
 
@@ -1386,7 +1387,7 @@ Lemma add_equations_debug_args_eval:
   satisf rs ls e' ->
   wt_regset env rs ->
   Mem.extends m tm ->
-  exists vl', eval_builtin_args ge ls sp tm arg' vl'.
+  exists vl', eval_builtin_args ge (Locmap.read ls) sp tm arg' vl'.
 Proof.
   induction 1; simpl; intros; destruct arg'; MonadInv.
 - exists (@nil val); constructor.
@@ -1395,7 +1396,8 @@ Proof.
 + exploit IHlist_forall2; eauto. intros (vl' & B).
   exploit add_equations_builtin_arg_lessdef; eauto.
   eapply add_equations_debug_args_satisf; eauto. intros (v1' & C & D).
-  exploit (@eval_builtin_arg_lessdef _ ge ls ls); eauto. intros (v1'' & E & F).
+  exploit (@eval_builtin_arg_lessdef _ ge (Locmap.read ls) (Locmap.read ls)); eauto.
+  intros (v1'' & E & F).
   exists (v1'' :: vl'); constructor; auto.
 + eauto.
 Qed.
@@ -1413,7 +1415,7 @@ Lemma add_equations_builtin_eval:
   external_call ef ge vargs m1 t vres m2 ->
   satisf rs ls e1 /\
   exists vargs' vres' m2',
-     eval_builtin_args ge ls sp m1' args' vargs'
+     eval_builtin_args ge (Locmap.read ls) sp m1' args' vargs'
   /\ external_call ef ge vargs' m1' t vres' m2'
   /\ Val.lessdef vres vres'
   /\ Mem.extends m2 m2'.
@@ -1422,7 +1424,7 @@ Proof.
   assert (DEFAULT: add_equations_builtin_args env args args' e1 = Some e2 ->
     satisf rs ls e1 /\
     exists vargs' vres' m2',
-       eval_builtin_args ge ls sp m1' args' vargs'
+       eval_builtin_args ge (Locmap.read ls) sp m1' args' vargs'
     /\ external_call ef ge vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2').
@@ -2044,7 +2046,7 @@ Proof.
   assert (F2': eval_addressing tge sp addr (reglist ls3 args2') = Some a2').
     rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
   exploit (eval_offset_addressing tge); eauto. intros F2''.
-  assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) = Some m2' /\ Mem.extends m' m2').
+  assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 @ (R src2')) = Some m2' /\ Mem.extends m' m2').
   { try discriminate;
     (eapply Mem.storev_extends;
      [eexact EXT1 | eexact STORE2 | apply Val.add_lessdef; [eexact G2|eauto] | eauto]). }
@@ -2157,7 +2159,7 @@ Proof.
 
 (* jumptable *)
 - exploit (exec_moves mv); eauto. intros [ls1 [A1 B1]].
-  assert (Val.lessdef (Vint n) (ls1 (R arg'))).
+  assert (Val.lessdef (Vint n) (ls1 @ (R arg'))).
     rewrite <- H0. eapply add_equation_lessdef with (q := Eq Full arg (R arg')); eauto.
   inv H2.
   econstructor; split.
@@ -2197,8 +2199,8 @@ Proof.
   rewrite H13. apply WTRS.
   generalize (loc_result_caller_save (RTL.fn_sig f)). 
   destruct (loc_result (RTL.fn_sig f)); simpl.
-  intros A; rewrite A; auto.
-  intros [A B]; rewrite A, B; auto.
+  intros A; unfold Locmap.get, return_regs; rewrite A; auto.
+  intros [A B]; unfold Locmap.get, return_regs; rewrite A, B; auto.
   apply return_regs_agree_callee_save.
   unfold proj_sig_res. rewrite <- H11; rewrite H13. apply WTRS.
 

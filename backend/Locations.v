@@ -308,12 +308,19 @@ End Loc.
 Set Implicit Arguments.
 
 Module Locmap.
+  Inductive entry := EOne (v: val).
 
-  Definition t := loc -> val.
+  Definition t := loc -> entry.
 
-  Definition init (x: val) : t := fun (_: loc) => x.
+  Definition init (x: val) : t := fun (_: loc) => EOne x.
 
-  Definition get (l: loc) (m: t) : val := m l.
+  Definition get (l: loc) (m: t) : val :=
+    match m l with
+    | EOne v => v
+    end.
+
+  (* Auxiliary for some places where a function of type [loc -> val] is expected. *)
+  Definition read (m: t) : loc -> val := fun (l: loc) => get l m.
 
   (** The [set] operation over location mappings reflects the overlapping
       properties of locations: changing the value of a location [l]
@@ -332,31 +339,31 @@ Module Locmap.
   Definition set (l: loc) (v: val) (m: t) : t :=
     fun (p: loc) =>
       if Loc.eq l p then
-        match l with R r => v | S sl ofs ty => Val.load_result (chunk_of_type ty) v end
+        match l with R r => EOne v | S sl ofs ty => EOne (Val.load_result (chunk_of_type ty) v) end
       else if Loc.diff_dec l p then
         m p
-      else Vundef.
+      else EOne Vundef.
 
   Lemma gss: forall l v m,
-    (set l v m) l =
+    get l (set l v m) =
     match l with R r => v | S sl ofs ty => Val.load_result (chunk_of_type ty) v end.
   Proof.
-    intros. unfold set. apply dec_eq_true.
+    intros. unfold get, set. rewrite dec_eq_true. destruct l; reflexivity.
   Qed.
 
-  Lemma gss_reg: forall r v m, (set (R r) v m) (R r) = v.
+  Lemma gss_reg: forall r v m, get (R r) (set (R r) v m) = v.
   Proof.
-    intros. unfold set. rewrite dec_eq_true. auto.
+    intros. unfold get, set. rewrite dec_eq_true. auto.
   Qed.
 
-  Lemma gss_typed: forall l v m, Val.has_type v (Loc.type l) -> (set l v m) l = v.
+  Lemma gss_typed: forall l v m, Val.has_type v (Loc.type l) -> get l (set l v m) = v.
   Proof.
     intros. rewrite gss. destruct l. auto. apply Val.load_result_same; auto.
   Qed.
 
-  Lemma gso: forall l v m p, Loc.diff l p -> (set l v m) p = m p.
+  Lemma gso: forall l v m p, Loc.diff l p -> get p (set l v m) = get p m.
   Proof.
-    intros. unfold set. destruct (Loc.eq l p).
+    intros. unfold set, get. destruct (Loc.eq l p).
     subst p. elim (Loc.same_not_diff _ H).
     destruct (Loc.diff_dec l p).
     auto.
@@ -369,17 +376,17 @@ Module Locmap.
     | l1 :: ll' => undef ll' (set l1 Vundef m)
     end.
 
-  Lemma guo: forall ll l m, Loc.notin l ll -> (undef ll m) l = m l.
+  Lemma guo: forall ll l m, Loc.notin l ll -> get l (undef ll m) = get l m.
   Proof.
     induction ll; simpl; intros. auto.
     destruct H. rewrite IHll; auto. apply gso. apply Loc.diff_sym; auto.
   Qed.
 
-  Lemma gus: forall ll l m, In l ll -> (undef ll m) l = Vundef.
+  Lemma gus: forall ll l m, In l ll -> get l (undef ll m) = Vundef.
   Proof.
-    assert (P: forall ll l m, m l = Vundef -> (undef ll m) l = Vundef).
+    assert (P: forall ll l m, get l m = Vundef -> get l (undef ll m) = Vundef).
       induction ll; simpl; intros. auto. apply IHll.
-      unfold set. destruct (Loc.eq a l).
+      unfold set, get. destruct (Loc.eq a l).
       destruct a. auto. destruct ty; reflexivity.
       destruct (Loc.diff_dec a l); auto.
     induction ll; simpl; intros. contradiction.
@@ -389,8 +396,8 @@ Module Locmap.
 
   Definition getpair (p: rpair loc) (m: t) : val :=
     match p with
-    | One l => m l
-    | Twolong l1 l2 => Val.longofwords (m l1) (m l2)
+    | One l => get l m
+    | Twolong l1 l2 => Val.longofwords (get l1 m) (get l2 m)
     end.
 
   Definition setpair (p: rpair mreg) (v: val) (m: t) : t :=
@@ -401,7 +408,7 @@ Module Locmap.
 
   Lemma getpair_exten:
     forall p ls1 ls2,
-    (forall l, In l (regs_of_rpair p) -> ls2 l = ls1 l) ->
+    (forall l, In l (regs_of_rpair p) -> get l ls2 = get l ls1) ->
     getpair p ls2 = getpair p ls1.
   Proof.
     intros. destruct p; simpl. 
@@ -411,7 +418,7 @@ Module Locmap.
 
   Lemma gpo:
     forall p v m l,
-    forall_rpair (fun r => Loc.diff l (R r)) p -> setpair p v m l = m l.
+    forall_rpair (fun r => Loc.diff l (R r)) p -> get l (setpair p v m) = get l m.
   Proof.
     intros; destruct p; simpl in *. 
   - apply gso. apply Loc.diff_sym; auto.
@@ -427,6 +434,8 @@ Module Locmap.
     end.
 
 End Locmap.
+
+Notation "a @ b" := (Locmap.get b a) (at level 1) : ltl.
 
 (** * Total ordering over locations *)
 
