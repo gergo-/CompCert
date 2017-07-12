@@ -20,6 +20,7 @@ Require Import Ordered.
 Require Import AST.
 Require Import Values.
 Require Export Machregs.
+Require Import Program.
 
 (** * Representation of locations *)
 
@@ -308,15 +309,326 @@ End Loc.
 Set Implicit Arguments.
 
 Module Locmap.
-  Inductive entry := EOne (v: val).
+  Inductive entry :=
+    | EOne (v: val)
+    | ETwo (hi lo: val).
+
+  Inductive reg_part :=
+    | POne (r: mreg)
+    | PHigh (r: mreg)
+    | PLow (r: mreg).
+
+  Definition reg_part_eq: forall p p': reg_part, { p = p' } + { p <> p' }.
+  Proof.
+    decide equality; apply mreg_eq.
+  Defined.
+
+  Definition superregs_cases:
+    forall r, {superregs r = nil} + {exists s, superregs r = s :: nil}.
+  Proof.
+    intros. destruct r; auto; simpl; right; eexists; f_equal.
+  Qed.
+
+  Definition subregs_cases:
+    forall r s, superregs r = s :: nil -> exists lo hi, subregs s = lo :: hi :: nil.
+  Proof.
+    intros. destruct r; try inversion H; repeat eexists; simpl; f_equal.
+  Qed.
+
+  Lemma subreg_not_diff:
+    forall r s, subreg r s -> ~ mreg_diff r s.
+  Proof.
+    intros. unfold not, mreg_diff, overlap. intuition tauto.
+  Qed.
+
+  (** Figure out what register part to access for a given register. Registers
+      that are not subregisters of others map to themselves. Subregisters map to
+      a description of where to find them in their superregister. For example,
+      on ARM, [S1] is the high part of the [D0] register pair, so
+      [mreg_access S1 = PHigh D0]. *)
+  Program Definition mreg_access (r: mreg): reg_part :=
+    match superregs r with
+    | nil => POne r
+    | s :: _ =>
+      match subregs s with
+      | lo :: hi :: nil =>
+        if mreg_eq r hi then PHigh s else PLow s
+      | _ => !
+      end
+    end.
+  Next Obligation.
+    generalize (superregs_cases r); intros [A | A].
+    rewrite A in Heq_anonymous0; congruence.
+    destruct A as [x A]. assert (x = s) by congruence; subst x.
+    apply subregs_cases in A. destruct A as [lo [hi]]. congruence.
+  Qed.
+
+  Lemma high_is_subreg:
+    forall r s, mreg_access r = PHigh s -> subreg r s.
+  Proof.
+    intros.
+    destruct r; compute in H; try inversion H; rewrite dec_eq_true in *; compute; auto.
+  Qed.
+
+  Corollary high_not_diff:
+    forall r s, mreg_access r = PHigh s -> ~ Loc.diff (R r) (R s).
+  Proof.
+    intros. unfold Loc.diff, mreg_diff, overlap. apply high_is_subreg in H; intuition auto.
+  Qed.
+
+  Corollary high_not_eq:
+    forall r s, mreg_access r = PHigh s -> r <> s.
+  Proof.
+    intros. apply high_is_subreg in H. apply subreg_not_eq; auto.
+  Qed.
+
+  Lemma low_is_subreg:
+    forall r s, mreg_access r = PLow s -> subreg r s.
+  Proof.
+    intros.
+    destruct r; compute in H; try inversion H;
+      rewrite dec_eq_false in *; try congruence;
+      subst; compute; auto.
+  Qed.
+
+  Corollary low_not_diff:
+    forall r s, mreg_access r = PLow s -> ~ Loc.diff (R r) (R s).
+  Proof.
+    intros. unfold Loc.diff, mreg_diff, overlap. apply low_is_subreg in H; intuition auto.
+  Qed.
+
+  Corollary low_not_eq:
+    forall r s, mreg_access r = PLow s -> r <> s.
+  Proof.
+    intros. apply low_is_subreg in H. apply subreg_not_eq; auto.
+  Qed.
+
+  Lemma one_is_eq:
+    forall r s, mreg_access r = POne s -> r = s.
+  Proof.
+    intros. destruct r; compute in H; try inversion H; auto.
+  Qed.
+
+  Ltac mreg_access_subregs :=
+    match goal with
+    | [ H: Locmap.mreg_access _ = Locmap.POne _ |- _ ] =>
+      apply Locmap.one_is_eq in H; subst; mreg_access_subregs
+    | [ H: Locmap.mreg_access _ = Locmap.PHigh _ |- _ ] =>
+      apply Locmap.high_is_subreg in H; mreg_access_subregs
+    | [ H: Locmap.mreg_access _ = Locmap.PLow _ |- _ ] =>
+      apply Locmap.low_is_subreg in H; mreg_access_subregs
+    | _ => idtac
+    end.
+
+  Lemma subreg_high_or_low:
+    forall r s, subreg r s -> mreg_access r = PHigh s \/ mreg_access r = PLow s.
+  Proof.
+    intros.
+    destruct s; compute in H; try contradiction;
+      decompose [or] H; try contradiction; subst; auto.
+  Qed.
+
+  Lemma superreg_one:
+    forall r s, subreg r s -> mreg_access s = POne s.
+  Proof.
+    intros.
+    destruct s; compute in H; try contradiction; reflexivity.
+  Qed.
+
+  Lemma mreg_access_high:
+    forall r s,
+    mreg_access r = PHigh s ->
+    exists hi lo, subregs s = lo :: hi :: nil /\ r = hi.
+  Proof.
+    intros. generalize (high_is_subreg r H); intros.
+    destruct s; compute in H0; decompose [or] H0; try contradiction;
+      subst; compute in H; try inversion H;
+      simpl; eexists; eexists; auto.
+  Qed.
+
+  Lemma mreg_access_low:
+    forall r s,
+    mreg_access r = PLow s ->
+    exists hi lo, subregs s = lo :: hi :: nil /\ r = lo.
+  Proof.
+    intros. generalize (low_is_subreg r H); intros.
+    destruct s; compute in H0; decompose [or] H0; try contradiction;
+      subst; compute in H; try inversion H;
+      simpl; eexists; eexists; auto.
+  Qed.
+
+  Lemma mreg_access_inj: forall r r', mreg_access r = mreg_access r' -> r = r'.
+  Proof.
+    intros.
+    destruct (mreg_access r) eqn:R, (mreg_access r') eqn:R'; try inversion H.
+    - apply one_is_eq in R. apply one_is_eq in R'. congruence.
+    - apply mreg_access_high in R. apply mreg_access_high in R'.
+      destruct R as [hi [lo]]; destruct H0. destruct R' as [hi' [lo']]; destruct H3.
+      congruence.
+    - apply mreg_access_low in R. apply mreg_access_low in R'.
+      destruct R as [hi [lo]]; destruct H0. destruct R' as [hi' [lo']]; destruct H3.
+      congruence.
+  Qed.
+
+  Lemma diff_high_diff:
+    forall p p' r hi,
+    Loc.diff (R p) (R hi) ->
+    mreg_access p = POne p' ->
+    mreg_access hi = PHigh r ->
+    Loc.diff (R p) (R r).
+  Proof.
+    intros. assert (p = p') by auto using one_is_eq; subst p'.
+    assert (subreg hi r) by auto using high_is_subreg.
+    destruct (mreg_eq r p).
+    - subst. apply Loc.diff_sym in H.
+      unfold Loc.diff, mreg_diff, overlap in H. exfalso. intuition auto.
+    - assert (~ subreg r p).
+      { apply high_is_subreg in H1. eauto using subreg_intrans. }
+      assert (~ superreg r p).
+      { contradict H3. apply superregs_subregs in H3.
+        apply subreg_high_or_low in H3. destruct H3; congruence. }
+      apply Loc.diff_sym. unfold Loc.diff, mreg_diff, overlap. tauto.
+  Qed.
+
+  Lemma diff_low_diff:
+    forall p p' r lo,
+    Loc.diff (R p) (R lo) ->
+    mreg_access p = POne p' ->
+    mreg_access lo = PLow r ->
+    Loc.diff (R p) (R r).
+  Proof.
+    intros. assert (p = p') by auto using one_is_eq; subst p'.
+    assert (subreg lo r) by auto using low_is_subreg.
+    destruct (mreg_eq r p).
+    - subst. apply Loc.diff_sym in H.
+      unfold Loc.diff, mreg_diff, overlap in H. exfalso. intuition auto.
+    - assert (~ subreg r p).
+      { apply low_is_subreg in H1. eauto using subreg_intrans. }
+      assert (~ superreg r p).
+      { contradict H3. apply superregs_subregs in H3.
+        apply subreg_high_or_low in H3. destruct H3; congruence. }
+      apply Loc.diff_sym. unfold Loc.diff, mreg_diff, overlap. tauto.
+  Qed.
+
+  Lemma mreg_not_eq_not_diff:
+    forall r r',
+    r <> r' ->
+    ~ mreg_diff r r' ->
+    subreg r r' \/ subreg r' r.
+  Proof.
+    intros. unfold not, mreg_diff, overlap in H0.
+    destruct (subreg_dec r r'); auto.
+    destruct (subreg_dec r' r); auto.
+    assert (~ superreg r r'). { contradict n0. apply superregs_subregs; auto. }
+    tauto.
+  Qed.
+
+  Lemma mreg_access_cases:
+    forall r s,
+    mreg_diff r s \/
+    r = s \/
+    (mreg_access r = POne r /\ (mreg_access s = PHigh r \/ mreg_access s = PLow r)) \/
+    (mreg_access s = POne s /\ (mreg_access r = PHigh s \/ mreg_access r = PLow s)).
+  Proof.
+    intros.
+    destruct (mreg_diff_dec r s); auto.
+    destruct (mreg_eq r s); auto.
+    right. right.
+    exploit mreg_not_eq_not_diff; eauto; intros [A | B].
+    - right. exploit superreg_one; eauto. exploit subreg_high_or_low; eauto.
+    - left. exploit superreg_one; eauto. exploit subreg_high_or_low; eauto.
+  Qed.
+
+  Lemma mreg_diff_high:
+    forall r s s',
+      mreg_diff r s ->
+      mreg_access s = PHigh s' ->
+      (mreg_diff r s' \/ mreg_access r = PLow s').
+  Proof.
+    intros.
+    destruct (subreg_dec r s').
+    - apply subreg_high_or_low in s0 as [Hi | Lo].
+      + apply diff_not_eq in H. rewrite <- Hi in H0.
+        exfalso. auto using mreg_access_inj.
+      + auto.
+    - left. unfold mreg_diff. split.
+      + contradict H. subst. apply high_is_subreg in H0.
+        unfold not; intros. apply diff_sym in H.
+        eapply subreg_not_diff; eauto.
+      + unfold mreg_diff in H. destruct H. apply high_is_subreg in H0.
+        unfold overlap in *. contradict H1. destruct H1.
+        * contradiction.
+        * apply superregs_subregs in H1.
+          exfalso. eauto using subreg_intrans.
+  Qed.
+
+  Lemma mreg_diff_low:
+    forall r s s',
+      mreg_diff r s ->
+      mreg_access s = PLow s' ->
+      (mreg_diff r s' \/ mreg_access r = PHigh s').
+  Proof.
+    intros.
+    destruct (subreg_dec r s').
+    - apply subreg_high_or_low in s0 as [Hi | Lo].
+      + auto.
+      + apply diff_not_eq in H. rewrite <- Lo in H0.
+        exfalso. auto using mreg_access_inj.
+    - left. unfold mreg_diff. split.
+      + contradict H. subst. apply low_is_subreg in H0.
+        unfold not; intros. apply diff_sym in H.
+        eapply subreg_not_diff; eauto.
+      + unfold mreg_diff in H. destruct H. apply low_is_subreg in H0.
+        unfold overlap in *. contradict H1. destruct H1.
+        * contradiction.
+        * apply superregs_subregs in H1.
+          exfalso. eauto using subreg_intrans.
+  Qed.
+
+  Lemma mreg_diff_subreg_diff:
+    forall r s s',
+    mreg_diff r s ->
+    subreg s' s ->
+    mreg_diff r s'.
+  Proof.
+    intros. generalize (mreg_access_cases r s'); intros [Diff | [Eq | [Sub | Sub]]].
+    - auto.
+    - subst. exfalso. eapply subreg_not_diff; eauto.
+    - destruct Sub as [Super [Hi | Lo]].
+      + apply high_is_subreg in Hi.
+        apply subregs_superregs in H0. apply subregs_superregs in Hi.
+        generalize (superregs_cases s'); intros [Nil | One].
+        * rewrite Nil in *. contradiction.
+        * destruct One. rewrite H1 in *. apply diff_not_eq in H.
+          inversion H0; inversion Hi; try contradiction; congruence.
+      + apply low_is_subreg in Lo.
+        apply subregs_superregs in H0. apply subregs_superregs in Lo.
+        generalize (superregs_cases s'); intros [Nil | One].
+        * rewrite Nil in *. contradiction.
+        * destruct One. rewrite H1 in *. apply diff_not_eq in H.
+          inversion H0; inversion Lo; try contradiction; congruence.
+    - destruct Sub as [Super [Hi | Lo]].
+      + apply high_is_subreg in Hi. exfalso. eauto using subreg_intrans.
+      + apply low_is_subreg in Lo. exfalso. eauto using subreg_intrans.
+  Qed.
+
+  Definition get_one  (e: entry): val := match e with EOne v => v      | _ => Vundef end.
+  Definition get_high (e: entry): val := match e with ETwo hi lo => hi | _ => Vundef end.
+  Definition get_low  (e: entry): val := match e with ETwo hi lo => lo | _ => Vundef end.
 
   Definition t := loc -> entry.
 
   Definition init (x: val) : t := fun (_: loc) => EOne x.
 
   Definition get (l: loc) (m: t) : val :=
-    match m l with
-    | EOne v => v
+    match l with
+    | R r =>
+      match mreg_access r with
+      | POne r => get_one (m l)
+      | PHigh s => get_high (m (R s))
+      | PLow s => get_low (m (R s))
+      end
+    | S _ _ _ => get_one (m l)
     end.
 
   (* Auxiliary for some places where a function of type [loc -> val] is expected. *)
@@ -336,24 +648,108 @@ Module Locmap.
       in the [Stacking] phase.  Hence, values stored in stack slots
       are normalized according to the type of the slot. *)
 
+  Definition set_high (e: entry) (v: val): entry :=
+    match e with
+      | EOne _ => ETwo v Vundef
+      | ETwo hi lo => ETwo v lo
+    end.
+
+  Definition set_low (e: entry) (v: val): entry :=
+    match e with
+      | EOne _ => ETwo Vundef v
+      | ETwo hi lo => ETwo hi v
+    end.
+
   Definition set (l: loc) (v: val) (m: t) : t :=
     fun (p: loc) =>
       if Loc.eq l p then
-        match l with R r => EOne v | S sl ofs ty => EOne (Val.load_result (chunk_of_type ty) v) end
+        match l with
+        | R r =>
+          match mreg_access r with
+          | POne r => EOne v
+          | PHigh s => set_high (m (R s)) v
+          | PLow s => set_low (m (R s)) v
+          end
+        | S sl ofs ty => EOne (Val.load_result (chunk_of_type ty) v)
+        end
       else if Loc.diff_dec l p then
         m p
-      else EOne Vundef.
+      else
+        match l with
+        | R r =>
+          match mreg_access r with
+          | POne r => EOne v
+          | PHigh s => set_high (m (R s)) v
+          | PLow s => set_low (m (R s)) v
+          end
+        | S sl ofs ty => EOne Vundef
+        end.
+
+  Definition set' (l: loc) (v: val) (m: t) : t :=
+    fun (p: loc) =>
+      if Loc.diff_dec l p then
+        m p
+      else
+        match l with
+          | R r =>
+            match mreg_access r with
+            | POne r => EOne v
+            | PHigh s => set_high (m (R s)) v
+            | PLow s => set_low (m (R s)) v
+            end
+          | S sl ofs ty =>
+            if Loc.eq l p then
+              EOne (Val.load_result (chunk_of_type ty) v)
+            else
+              EOne Vundef
+        end.
+
+  Lemma set_set'_equal: forall l v m x, (set l v m) x = (set' l v m) x.
+  Proof.
+    intros. unfold set, set'.
+    destruct (Loc.diff_dec l x).
+    - rewrite dec_eq_false; auto. apply Loc.diff_not_eq; auto.
+    - destruct (Loc.eq l x); auto.
+  Qed.
+
+  Lemma get_set_get_set': forall l p v m, get p (set l v m) = get p (set' l v m).
+  Proof.
+    intros. unfold get.
+    destruct p. destruct (mreg_access r); rewrite set_set'_equal; auto.
+    rewrite set_set'_equal; auto.
+  Qed.
 
   Lemma gss: forall l v m,
     get l (set l v m) =
     match l with R r => v | S sl ofs ty => Val.load_result (chunk_of_type ty) v end.
   Proof.
-    intros. unfold get, set. rewrite dec_eq_true. destruct l; reflexivity.
+    intros.
+    destruct l.
+    - simpl. unfold set. destruct (mreg_access r) eqn: E.
+      + rewrite dec_eq_true; auto.
+      + destruct (mreg_eq r r0).
+        * apply high_not_eq in E; contradiction.
+        * rewrite pred_dec_false; try congruence.
+          rewrite pred_dec_false. destruct (m (R r0)); auto. auto using high_not_diff.
+      + destruct (mreg_eq r r0).
+        * apply low_not_eq in E; contradiction.
+        * rewrite pred_dec_false; try congruence.
+          rewrite pred_dec_false. destruct (m (R r0)); auto. auto using low_not_diff.
+    - unfold get, set. rewrite dec_eq_true. reflexivity.
   Qed.
 
   Lemma gss_reg: forall r v m, get (R r) (set (R r) v m) = v.
   Proof.
-    intros. unfold get, set. rewrite dec_eq_true. auto.
+    intros. unfold get, set. destruct (mreg_access r) eqn: E.
+    - rewrite dec_eq_true. auto.
+    - rewrite !pred_dec_false.
+      + destruct (m (R r0)); auto.
+      + auto using high_not_diff.
+      + apply high_not_eq in E; congruence.
+    - rewrite !pred_dec_false.
+      + destruct (m (R r0)); auto.
+      + auto using low_not_diff.
+      + apply low_not_eq in E; congruence.
   Qed.
 
   Lemma gss_typed: forall l v m, Val.has_type v (Loc.type l) -> get l (set l v m) = v.
@@ -361,13 +757,62 @@ Module Locmap.
     intros. rewrite gss. destruct l. auto. apply Val.load_result_same; auto.
   Qed.
 
+  Lemma gso_aux: forall l v m p, Loc.diff l p -> (set l v m) p = m p.
+  Proof.
+    intros. unfold set.
+    rewrite dec_eq_false, pred_dec_true; auto using Loc.diff_not_eq.
+  Qed.
+
   Lemma gso: forall l v m p, Loc.diff l p -> get p (set l v m) = get p m.
   Proof.
-    intros. unfold set, get. destruct (Loc.eq l p).
-    subst p. elim (Loc.same_not_diff _ H).
-    destruct (Loc.diff_dec l p).
-    auto.
-    contradiction.
+    intros. unfold get. destruct p; rewrite gso_aux; auto.
+    destruct (mreg_access r) eqn:E; auto.
+    - destruct l; auto.
+      rename r0 into super, r1 into other.
+      destruct (reg_part_eq (mreg_access other) (PLow super)).
+      + unfold set. rewrite dec_eq_false, pred_dec_false.
+        rewrite e. destruct (m (R super)); auto.
+        apply low_is_subreg in e. unfold Loc.diff, mreg_diff, overlap. intuition tauto.
+        apply low_is_subreg, subreg_not_eq in e. congruence.
+      + assert (Loc.diff (R other) (R super)).
+        { unfold Loc.diff, mreg_diff, overlap. split.
+          - apply high_is_subreg, subreg_not_diff in E.
+            contradict E. subst. apply Loc.diff_sym in H. auto.
+          - unfold not; intros [A | B].
+            + apply subreg_high_or_low in A. destruct A.
+              * rewrite <- E in H0. generalize (mreg_access_inj other r H0); intros.
+                subst. apply Loc.diff_not_eq in H. auto.
+              * contradiction.
+            + apply superregs_subregs, subreg_high_or_low in B. destruct B.
+              * apply high_is_subreg in E. apply high_is_subreg in H0.
+                eapply subreg_intrans with (r2 := super); eauto.
+              * apply high_is_subreg in E. apply low_is_subreg in H0.
+                eapply subreg_intrans with (r2 := super); eauto. }
+        unfold set. rewrite dec_eq_false, pred_dec_true; auto.
+        auto using Loc.diff_not_eq.
+    - destruct l; auto.
+      rename r0 into super, r1 into other.
+      destruct (reg_part_eq (mreg_access other) (PHigh super)).
+      + unfold set. rewrite dec_eq_false, pred_dec_false.
+        rewrite e. destruct (m (R super)); auto.
+        apply high_is_subreg in e. unfold Loc.diff, mreg_diff, overlap. intuition tauto.
+        apply high_is_subreg, subreg_not_eq in e. congruence.
+      + assert (Loc.diff (R other) (R super)).
+        { unfold Loc.diff, mreg_diff, overlap. split.
+          - apply low_is_subreg, subreg_not_diff in E.
+            contradict E. subst. apply Loc.diff_sym in H. auto.
+          - unfold not; intros [A | B].
+            + apply subreg_high_or_low in A. destruct A.
+              * contradiction.
+              * rewrite <- E in H0. generalize (mreg_access_inj other r H0); intros.
+                subst. apply Loc.diff_not_eq in H. auto.
+            + apply superregs_subregs, subreg_high_or_low in B. destruct B.
+              * apply low_is_subreg in E. apply high_is_subreg in H0.
+                eapply subreg_intrans with (r2 := super); eauto.
+              * apply low_is_subreg in E. apply low_is_subreg in H0.
+                eapply subreg_intrans with (r2 := super); eauto. }
+        unfold set. rewrite dec_eq_false, pred_dec_true; auto.
+        auto using Loc.diff_not_eq.
   Qed.
 
   Fixpoint undef (ll: list loc) (m: t) {struct ll} : t :=
@@ -381,14 +826,76 @@ Module Locmap.
     induction ll; simpl; intros. auto.
     destruct H. rewrite IHll; auto. apply gso. apply Loc.diff_sym; auto.
   Qed.
+  
+  Lemma mreg_both_overlap:
+    forall r r' s,
+    r <> r' ->
+    overlap r s ->
+    overlap r' s ->
+    (mreg_access r = PHigh s /\ mreg_access r' = PLow s) \/
+    (mreg_access r = PLow s /\ mreg_access r' = PHigh s).
+  Proof.
+    intros. unfold overlap in *. destruct H0, H1.
+    - destruct s; simpl in *; try contradiction;
+        decompose [or] H0; decompose [or] H1; subst; try contradiction; auto.
+    - apply superregs_subregs in H1. exfalso. eauto using subreg_intrans.
+    - apply superregs_subregs in H0. exfalso. eauto using subreg_intrans.
+    - destruct s; simpl in *; try contradiction;
+        decompose [or] H0; decompose [or] H1; subst; try contradiction.
+  Qed.
+
+  Lemma gus_aux_reg:
+    forall r r' m, get (R r) m = Vundef -> get (R r) (set (R r') Vundef m) = Vundef.
+  Proof.
+    intros.
+    destruct (mreg_eq r r'). subst; rewrite gss; auto.
+    destruct (mreg_diff_dec r r'). rewrite gso; auto using Loc.diff_sym.
+    destruct (mreg_not_eq_not_diff n n0).
+    - (* set superreg, read subreg *)
+      generalize (superreg_one r r' H0); intros.
+      generalize (subreg_high_or_low r r' H0); intros [A | A].
+      + unfold get, set. rewrite H1, A. rewrite dec_eq_true; auto.
+      + unfold get, set. rewrite H1, A. rewrite dec_eq_true; auto.
+    - (* set subreg, read superreg *)
+      generalize (superreg_one r' r H0); intros.
+      generalize (subreg_high_or_low r' r H0); intros [A | A].
+      + unfold get, set. rewrite H1, A.
+        rewrite dec_eq_false, pred_dec_false.
+        destruct (m (R r)); auto.
+        intuition auto using diff_sym.
+        congruence.
+      + unfold get, set. rewrite H1, A.
+        rewrite dec_eq_false, pred_dec_false.
+        destruct (m (R r)); auto.
+        intuition auto using diff_sym.
+        congruence.
+  Qed.
+
+  Lemma gus_aux:
+    forall l m p, get p m = Vundef -> get p (set l Vundef m) = Vundef.
+  Proof.
+    intros.
+    destruct l, p.
+    - apply gus_aux_reg; auto.
+    - unfold get, set. rewrite dec_eq_false, pred_dec_true; auto.
+      simpl; auto.
+      discriminate.
+    - unfold get, set. rewrite dec_eq_false, pred_dec_true; auto.
+      simpl; auto.
+      discriminate.
+    - destruct (Loc.eq (S sl0 pos0 ty0) (S sl pos ty)).
+      rewrite e, gss. destruct ty; auto.
+      destruct (Loc.diff_dec (S sl0 pos0 ty0) (S sl pos ty)).
+      rewrite gso; auto using Loc.diff_sym.
+      simpl. unfold set.
+      rewrite dec_eq_false, pred_dec_false; auto using Loc.diff_sym.
+  Qed.
 
   Lemma gus: forall ll l m, In l ll -> get l (undef ll m) = Vundef.
   Proof.
     assert (P: forall ll l m, get l m = Vundef -> get l (undef ll m) = Vundef).
-      induction ll; simpl; intros. auto. apply IHll.
-      unfold set, get. destruct (Loc.eq a l).
-      destruct a. auto. destruct ty; reflexivity.
-      destruct (Loc.diff_dec a l); auto.
+    { induction ll; simpl; intros. auto. apply IHll.
+      apply gus_aux; auto. }
     induction ll; simpl; intros. contradiction.
     destruct H. apply P. subst a. apply gss_typed. exact I.
     auto.

@@ -288,7 +288,7 @@ Proof.
   destruct (Mem.valid_access_load m (chunk_of_type ty) sp (pos + 4 * ofs)) as [v LOAD].
   eapply valid_access_location; eauto.
   red; intros; eauto with mem.
-  exists v; split; auto. rewrite H1; auto.
+  exists v; split; auto. simpl in H1. rewrite H1; auto.
 - split; assumption.
 Qed.
 
@@ -299,7 +299,7 @@ Lemma contains_locations_exten:
               (contains_locations j sp pos bound sl ls').
 Proof.
   intros; split; simpl; intros; auto.
-  intuition auto. rewrite H. eauto.
+  intuition auto. simpl in H. rewrite H. eauto.
 Qed.
 
 Lemma contains_locations_incr:
@@ -350,6 +350,7 @@ Proof.
   induction rl as [ | r1 rl]; simpl; intros.
 - reflexivity.
 - apply sepconj_morph_2; auto. rewrite H by auto. reflexivity.
+  apply IHrl; intros. simpl. rewrite H by auto. reflexivity.
 Qed.
 
 (** Separation logic assertions describing the stack frame at [sp].
@@ -600,6 +601,7 @@ Lemma agree_reglist:
 Proof.
   induction rl; simpl; intros.
   auto. constructor; auto using agree_reg.
+  fold (ls @ (R a)). auto using agree_reg.
 Qed.
 
 Hint Resolve agree_reg agree_reglist: stacking.
@@ -617,11 +619,21 @@ Proof.
   rewrite Locmap.gss; auto.
   destruct (mreg_diff_dec r r0).
   - rewrite Locmap.gso; auto.
-  - unfold Locmap.set, Locmap.get.
-    destruct (OrderedMreg.eq_dec r r0).
-    + subst r0. contradiction.
-    + rewrite dec_eq_false; try congruence.
-      rewrite pred_dec_false; auto.
+  - rewrite Locmap.get_set_get_set'. unfold Locmap.set', Locmap.get.
+    apply not_eq_sym in n.
+    generalize (Locmap.mreg_not_eq_not_diff n n0); intros [A | B].
+    + generalize (Locmap.superreg_one r r0 A); intros.
+      generalize (Locmap.subreg_high_or_low r r0 A); intros [C | D].
+      rewrite H1. rewrite pred_dec_false by auto. rewrite C.
+      destruct (ls (R r0)); simpl; auto.
+      rewrite H1. rewrite pred_dec_false by auto. rewrite D.
+      destruct (ls (R r0)); simpl; auto.
+    + generalize (Locmap.superreg_one r0 r B); intros.
+      generalize (Locmap.subreg_high_or_low r0 r B); intros [C | D].
+      rewrite C. rewrite pred_dec_false by auto using Loc.same_not_diff. rewrite H1.
+      simpl; auto.
+      rewrite D. rewrite pred_dec_false by auto using Loc.same_not_diff. rewrite H1.
+      simpl; auto.
 Qed.
 
 Lemma agree_regs_set_reg:
@@ -634,12 +646,21 @@ Proof.
   destruct (mreg_diff_dec r r0).
   - rewrite regmap_gso; auto.
     rewrite Locmap.gso; auto.
-  - unfold Locmap.set, Locmap.get.
-    destruct (OrderedMreg.eq_dec r r0).
-    + subst r0. unfold regmap_set.
-      rewrite dec_eq_true, Regmap.gss; auto.
-    + rewrite dec_eq_false; try congruence.
-      rewrite pred_dec_false; auto.
+  - destruct (mreg_eq r r0). subst. rewrite regmap_gss; auto. rewrite Locmap.gss; auto.
+    rewrite Locmap.get_set_get_set'. unfold Locmap.set', Locmap.get.
+    generalize (Locmap.mreg_not_eq_not_diff n0 n); intros [A | B].
+    + generalize (Locmap.superreg_one r r0 A); intros.
+      generalize (Locmap.subreg_high_or_low r r0 A); intros [C | D].
+      rewrite H1. rewrite pred_dec_false by auto. rewrite C.
+      destruct (ls (R r0)); simpl; auto.
+      rewrite H1. rewrite pred_dec_false by auto. rewrite D.
+      destruct (ls (R r0)); simpl; auto.
+    + generalize (Locmap.superreg_one r0 r B); intros.
+      generalize (Locmap.subreg_high_or_low r0 r B); intros [C | D].
+      rewrite C. rewrite pred_dec_false by auto using Loc.same_not_diff. rewrite H1.
+      simpl; auto.
+      rewrite D. rewrite pred_dec_false by auto using Loc.same_not_diff. rewrite H1.
+      simpl; auto.
 Qed.
 
 Lemma agree_regs_set_pair:
@@ -692,11 +713,21 @@ Proof.
   - rewrite Locmap.gso, Regmap.gso; auto.
     apply IHrl; auto.
     apply diff_not_eq, diff_sym; auto.
-  - unfold Locmap.set, Locmap.get.
-    destruct (OrderedMreg.eq_dec a r).
-    + subst a. rewrite dec_eq_true. rewrite Regmap.gss; auto.
-    + rewrite dec_eq_false; try congruence.
-      rewrite pred_dec_false; auto.
+  - destruct (mreg_eq a r). subst a. rewrite Regmap.gss; auto. rewrite Locmap.gss; auto.
+    rewrite Locmap.get_set_get_set'. unfold Locmap.set', Locmap.get.
+    generalize (Locmap.mreg_not_eq_not_diff n0 n); intros [A | B].
+    + generalize (Locmap.superreg_one a r A); intros.
+      generalize (Locmap.subreg_high_or_low a r A); intros [C | D].
+      rewrite H0. rewrite pred_dec_false by auto. rewrite C.
+      destruct (LTL.undef_regs rl ls (R r)); simpl; auto.
+      rewrite H0. rewrite pred_dec_false by auto. rewrite D.
+      destruct (LTL.undef_regs rl ls (R r)); simpl; auto.
+    + generalize (Locmap.superreg_one r a B); intros.
+      generalize (Locmap.subreg_high_or_low r a B); intros [C | D].
+      rewrite C. rewrite pred_dec_false by auto using Loc.same_not_diff. rewrite H0.
+      simpl; auto.
+      rewrite D. rewrite pred_dec_false by auto using Loc.same_not_diff. rewrite H0.
+      simpl; auto.
 Qed.
 
 (** Preservation under assignment of stack slot *)
@@ -856,7 +887,13 @@ Lemma agree_callee_save_return_regs:
   agree_callee_save (return_regs ls1 ls2) ls1.
 Proof.
   intros; red; intros.
-  unfold return_regs. destruct l; auto. unfold Locmap.get; rewrite H; auto.
+  unfold return_regs. destruct l; auto.
+  unfold Locmap.get; destruct (Locmap.mreg_access r) eqn:A.
+  - rewrite H; auto.
+  - apply Locmap.high_is_subreg in A. apply subreg_callee_save in A.
+    rewrite H in A. rewrite <- A. auto.
+  - apply Locmap.low_is_subreg in A. apply subreg_callee_save in A.
+    rewrite H in A. rewrite <- A. auto.
 Qed.
 
 Lemma agree_callee_save_set_result:
@@ -1028,15 +1065,92 @@ Remark LTL_undef_regs_same:
   forall r rl ls, In r rl -> (LTL.undef_regs rl ls) @ (R r) = Vundef.
 Proof.
   induction rl; simpl; intros. contradiction.
+  (* FIXME:
+  fold ((Locmap.set (R a) Vundef (LTL.undef_regs rl ls)) @ (R r)).
+*)
   unfold Locmap.set, Locmap.get. destruct (Loc.eq (R a) (R r)). auto.
   destruct (Loc.diff_dec (R a) (R r)); auto.
-  apply IHrl. intuition congruence.
+  rewrite e in d; apply Loc.same_not_diff in d; contradiction.
+  generalize (IHrl ls); intros. simpl in H0.
+  destruct (Locmap.mreg_access r) eqn:R'; auto.
+  destruct (Locmap.mreg_access a) eqn:A; auto.
+  destruct (LTL.undef_regs rl ls (R r1)); auto.
+  destruct (LTL.undef_regs rl ls (R r1)); auto.
+
+  generalize (Locmap.high_is_subreg _ R'); intros.
+  generalize (Locmap.superreg_one _ _ H1); intros.
+  destruct (mreg_eq a r0).
+  subst. rewrite dec_eq_true, H2. auto.
+  inversion e; subst.
+  rewrite dec_eq_false.
+  generalize (Locmap.subreg_not_diff H1); intros.
+  rewrite pred_dec_false by auto.
+  rewrite R'. destruct (LTL.undef_regs rl ls (R r0)).
+  simpl; auto.
+  simpl; auto.
+  congruence.
+
+  generalize (Locmap.low_is_subreg _ R'); intros.
+  generalize (Locmap.superreg_one _ _ H1); intros.
+  destruct (mreg_eq a r0).
+  subst. rewrite dec_eq_true, H2. auto.
+  inversion e; subst.
+  rewrite dec_eq_false.
+  generalize (Locmap.subreg_not_diff H1); intros.
+  rewrite pred_dec_false by auto.
+  rewrite R'. destruct (LTL.undef_regs rl ls (R r0)).
+  simpl; auto.
+  simpl; auto.
+  congruence.
+
+  destruct H. congruence.
+  generalize (IHrl ls H); intros. simpl in H0.
+  destruct (Locmap.mreg_access r) eqn: R'.
+  destruct (mreg_diff_dec a r).
+  rewrite pred_dec_true by auto; auto. rewrite pred_dec_false by auto.
+  destruct (Locmap.mreg_access a); auto.
+  destruct (LTL.undef_regs rl ls (R r1)); auto.
+  destruct (LTL.undef_regs rl ls (R r1)); auto.
+
+  generalize (Locmap.high_is_subreg _ R'); intros.
+  generalize (Locmap.superreg_one _ _ H1); intros.
+  destruct (mreg_eq a r0).
+  subst. rewrite dec_eq_true, H2. auto.
+  rewrite dec_eq_false.
+  destruct (mreg_diff_dec a r0).
+  rewrite pred_dec_true by auto. auto.
+  rewrite pred_dec_false by auto.
+  (* a is low subreg *)
+  generalize (Locmap.mreg_not_eq_not_diff n0 n1); intros [A | B].
+  generalize (Locmap.subreg_high_or_low a r0 A); intros [C | D].
+  rewrite <- C in R'. apply Locmap.mreg_access_inj in R'. congruence.
+  rewrite D. destruct (LTL.undef_regs rl ls (R r0)); auto.
+  exfalso. eapply subreg_intrans with (r2 := r0); eauto.
+  congruence.
+
+  generalize (Locmap.low_is_subreg _ R'); intros.
+  generalize (Locmap.superreg_one _ _ H1); intros.
+  destruct (mreg_eq a r0).
+  subst. rewrite dec_eq_true, H2. auto.
+  rewrite dec_eq_false.
+  destruct (mreg_diff_dec a r0).
+  rewrite pred_dec_true by auto. auto.
+  rewrite pred_dec_false by auto.
+  (* a is high subreg *)
+  generalize (Locmap.mreg_not_eq_not_diff n0 n1); intros [A | B].
+  generalize (Locmap.subreg_high_or_low a r0 A); intros [C | D].
+  rewrite C. destruct (LTL.undef_regs rl ls (R r0)); auto.
+  rewrite <- D in R'. apply Locmap.mreg_access_inj in R'. congruence.
+  exfalso. eapply subreg_intrans with (r2 := r0); eauto.
+  congruence.
 Qed.
 
 Remark LTL_undef_regs_others:
   forall r rl ls, (forall r', In r' rl -> mreg_diff r r') -> (LTL.undef_regs rl ls) @ (R r) = ls @ (R r).
 Proof.
   induction rl; simpl; intros. auto.
+  fold ((Locmap.set (R a) Vundef (LTL.undef_regs rl ls)) @ (R r)).
+  fold (ls @ (R r)).
   rewrite Locmap.gso; auto. apply diff_sym, H. auto.
 Qed.
 
@@ -1044,6 +1158,8 @@ Remark LTL_undef_regs_slot:
   forall sl ofs ty rl ls, (LTL.undef_regs rl ls) @ (S sl ofs ty) = ls @ (S sl ofs ty).
 Proof.
   induction rl; simpl; intros. auto.
+  fold ((Locmap.set (R a) Vundef (LTL.undef_regs rl ls)) @ (S sl ofs ty)).
+  fold (ls @ (S sl ofs ty)).
   rewrite Locmap.gso. apply IHrl. red; auto.
 Qed.
 
@@ -1053,8 +1169,38 @@ Remark undef_regs_type:
 Proof.
   induction rl; simpl; intros.
 - auto.
-- unfold Locmap.set, Locmap.get. destruct (Loc.eq (R a) l). red; auto.
-  destruct (Loc.diff_dec (R a) l); fold ((LTL.undef_regs rl ls) @ l); auto. red; auto.
+- rewrite Locmap.get_set_get_set'.
+  unfold Locmap.set', Locmap.get. destruct l.
+  generalize (Locmap.mreg_access_cases a r); intros [Diff | [Eq | [Sub | Sub]]].
+  + generalize (IHrl ls H); intros. simpl in H0.
+    destruct (Locmap.mreg_access r) eqn:R'. rewrite pred_dec_true; auto.
+    destruct (Locmap.mreg_diff_high Diff R') as [Diff' | Lo].
+    rewrite pred_dec_true; auto. rewrite pred_dec_false, Lo.
+    destruct (LTL.undef_regs rl ls (R r0)); auto.
+    apply Locmap.low_is_subreg, Locmap.subreg_not_diff in Lo; auto.
+    destruct (Locmap.mreg_diff_low Diff R') as [Diff' | Hi].
+    rewrite pred_dec_true; auto. rewrite pred_dec_false, Hi.
+    destruct (LTL.undef_regs rl ls (R r0)); auto.
+    apply Locmap.high_is_subreg, Locmap.subreg_not_diff in Hi; auto.
+  + (*generalize (IHrl ls H); intros. simpl in H0.*)
+    subst. destruct (Locmap.mreg_access r) eqn:R'.
+    rewrite pred_dec_false; simpl; auto using same_not_diff.
+    rewrite pred_dec_false. destruct (LTL.undef_regs rl ls (R r0)); simpl; auto.
+    apply Locmap.high_is_subreg, Locmap.subreg_not_diff in R'; auto.
+    rewrite pred_dec_false. destruct (LTL.undef_regs rl ls (R r0)); simpl; auto.
+    apply Locmap.low_is_subreg, Locmap.subreg_not_diff in R'; auto.
+  + destruct Sub as [Super [Hi | Lo]].
+    rewrite Hi, pred_dec_false, Super. simpl; auto. apply Loc.same_not_diff.
+    rewrite Lo, pred_dec_false, Super. simpl; auto. apply Loc.same_not_diff.
+  + destruct Sub as [Super [Hi | Lo]].
+    rewrite Hi, pred_dec_false, Super.
+    destruct (LTL.undef_regs rl ls (R r)); simpl; auto.
+    apply Locmap.high_is_subreg, Locmap.subreg_not_diff in Hi; auto.
+    rewrite Lo, pred_dec_false, Super.
+    destruct (LTL.undef_regs rl ls (R r)); simpl; auto.
+    apply Locmap.low_is_subreg, Locmap.subreg_not_diff in Lo; auto.
+  + rewrite pred_dec_true.
+    fold ((LTL.undef_regs rl ls) @ (S sl pos ty0)); auto. red; auto.
 Qed.
 
 Lemma save_callee_save_correct:
@@ -1085,8 +1231,9 @@ Proof.
   split. eexact EXEC.
   split. rewrite (contains_callee_saves_exten j sp ls0 ls1). exact SEP.
   intros. apply b.(used_callee_save_prop) in H.
-    unfold ls1. rewrite LTL_undef_regs_others. unfold call_regs. 
-    apply AGCS; auto.
+    unfold ls1. rewrite LTL_undef_regs_others. unfold call_regs. simpl.
+    fold (ls @ (R r)). fold (ls0 @ (R r)).
+    apply AGCS. auto.
     red; intros.
     generalize destroyed_at_function_entry_caller_save; unfold no_callee_saves; intros.
     apply callee_caller_save_diff. contradict H1. rewrite not_false_iff_true.
@@ -1204,9 +1351,13 @@ Local Opaque b fe.
   split. eexact SAVE_CS.
   split. exact AGREGS'.
   split. rewrite LS1. apply agree_locs_undef_locs; [|reflexivity].
-    constructor; intros. unfold call_regs. apply AGCS. 
+    constructor; intros. unfold call_regs. simpl.
+    fold (ls @ (R r)). fold (ls0 @ (R r)).
+    apply AGCS.
     unfold mreg_within_bounds in H; tauto.
-    unfold call_regs. apply AGCS. auto.
+    unfold call_regs. simpl.
+    fold (ls @ (S Outgoing ofs ty)). fold (ls0 @ (S Outgoing ofs ty)).
+    apply AGCS. auto.
   split. exact SEPFINAL.
   split. exact SAME. exact INCR.
 Qed.
@@ -1264,7 +1415,7 @@ Local Opaque mreg_type.
   split. eapply star_step; eauto. 
     econstructor. exact LOAD. traceEq.
   split. intros.
-    destruct (In_dec mreg_eq r0 l). auto. 
+    destruct (In_dec mreg_eq r0 l). fold (ls0 @ (R r0)). auto. 
     assert (r = r0) by tauto. subst r0.
     rewrite C by auto. rewrite regmap_gss. exact SPEC.
   split. intros. 
@@ -1356,11 +1507,30 @@ Proof.
   split. assumption.
   split. eassumption.
   split. red; unfold return_regs, Locmap.get; intros.
+    generalize (CS r); intro CSr; unfold Locmap.get in CSr.
+    generalize (AGR r); intro AGRr; unfold Locmap.get in AGRr.
+    destruct (Locmap.mreg_access r) eqn:R'.
     destruct (is_callee_save r) eqn:C.
-    apply CS; auto.
-    rewrite NCS by auto. apply AGR.
+    apply CSr; auto.
+    rewrite NCS by auto. apply AGRr.
+    destruct (is_callee_save r0) eqn:C.
+    apply CSr; auto.
+    apply Locmap.high_is_subreg, subreg_callee_save in R'. congruence.
+    rewrite NCS. apply AGRr.
+    apply Locmap.high_is_subreg, subreg_callee_save in R'. congruence.
+    destruct (is_callee_save r0) eqn:C.
+    apply CSr; auto.
+    apply Locmap.low_is_subreg, subreg_callee_save in R'. congruence.
+    rewrite NCS. apply AGRr.
+    apply Locmap.low_is_subreg, subreg_callee_save in R'. congruence.
+
   split. red; unfold return_regs, Locmap.get; intros.
     destruct l; auto. rewrite H; auto.
+  destruct (Locmap.mreg_access r) eqn:R'; auto.
+  apply Locmap.high_is_subreg, subreg_callee_save in R'.
+  rewrite H in R'. rewrite <- R'. auto.
+  apply Locmap.low_is_subreg, subreg_callee_save in R'.
+  rewrite H in R'. rewrite <- R'. auto.
   assumption.
 Qed.
 
@@ -1632,7 +1802,7 @@ Proof.
   rewrite Genv.find_funct_find_funct_ptr in FF.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
   exists b; exists tf; split; auto. simpl.
-  generalize (AG m0). rewrite EQ. intro INJ. inv INJ.
+  generalize (AG m0). fold (ls @ (R m0)) in EQ. rewrite EQ. intro INJ. inv INJ.
   rewrite DOMAIN in H2. inv H2. simpl. auto. eapply FUNCTIONS; eauto.
 - destruct (Genv.find_symbol ge i) as [b|] eqn:?; try discriminate.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
@@ -2172,7 +2342,7 @@ Proof.
   set (j := Mem.flat_inj (Mem.nextblock m0)).
   eapply match_states_call with (j := j); eauto.
   constructor. red; intros. rewrite H3, loc_arguments_main in H. contradiction.
-  red; simpl; auto.
+  red; simpl; intro r; destruct (Locmap.mreg_access r); auto.
   red; simpl; auto.
   simpl. rewrite sep_pure. split; auto. split;[|split].
   eapply Genv.initmem_inject; eauto.
@@ -2197,7 +2367,7 @@ Proof.
   - generalize (loc_result_type signature_main). rewrite LR. discriminate.
   }
   destruct R as [rres EQ]. rewrite EQ in H1. simpl in H1.
-  generalize (AGREGS rres). rewrite H1. intros A; inv A.
+  generalize (AGREGS rres). simpl. rewrite H1. intros A; inv A.
   econstructor; eauto.
 Qed.
 

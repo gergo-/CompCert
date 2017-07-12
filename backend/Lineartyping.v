@@ -105,10 +105,25 @@ Lemma wt_setreg:
   Val.has_type v (mreg_type r) -> wt_locset ls -> wt_locset (Locmap.set (R r) v ls).
 Proof.
   intros; red; intros.
-  unfold Locmap.set, Locmap.get.
-  destruct (Loc.eq (R r) l).
-  subst l; auto.
-  destruct (Loc.diff_dec (R r) l). fold (ls @ l). auto. red. auto.
+  unfold wt_locset in H0.
+  destruct (Loc.diff_dec (R r) l). rewrite Locmap.gso; auto.
+  destruct (Loc.eq (R r) l). subst; rewrite Locmap.gss; auto.
+  rewrite Locmap.get_set_get_set'. unfold Locmap.set', Locmap.get.
+  destruct l. assert (r <> r0) by congruence. simpl in n.
+  generalize (Locmap.mreg_not_eq_not_diff H1 n); intros [A | B].
+  - generalize (Locmap.superreg_one r r0 A); intros.
+    generalize (Locmap.subreg_high_or_low r r0 A); intros [C | D].
+    rewrite H2. rewrite C. rewrite pred_dec_false; auto.
+    destruct (ls (R r0)); simpl; auto.
+    rewrite H2. rewrite D. rewrite pred_dec_false; auto.
+    destruct (ls (R r0)); simpl; auto.
+  - generalize (Locmap.superreg_one r0 r B); intros.
+    generalize (Locmap.subreg_high_or_low r0 r B); intros [C | D].
+    rewrite H2. rewrite C. rewrite pred_dec_false; auto.
+    destruct (ls (R r0)); simpl; auto. apply Loc.same_not_diff.
+    rewrite H2. rewrite D. rewrite pred_dec_false; auto.
+    destruct (ls (R r0)); simpl; auto. apply Loc.same_not_diff.
+  - contradict n. red; auto.
 Qed.
 
 Lemma wt_setstack:
@@ -122,7 +137,11 @@ Proof.
   generalize (Val.load_result_type (chunk_of_type ty) v).
   replace (type_of_chunk (chunk_of_type ty)) with ty. auto.
   destruct ty; reflexivity.
-  destruct (Loc.diff_dec (S sl ofs ty) l). fold (ls @ l). auto. red. auto.
+  destruct l.
+  generalize (H (R r)); intros. simpl in H0.
+  destruct (Locmap.mreg_access r); simpl; auto.
+  destruct (Loc.diff_dec (S sl ofs ty) (S sl0 pos ty0)).
+  fold (ls @ (S sl0 pos ty0)). auto. simpl. auto.
 Qed.
 
 Lemma wt_undef_regs:
@@ -136,9 +155,9 @@ Lemma wt_call_regs:
 Proof.
   intros; red; intros. unfold call_regs, Locmap.get. destruct l. fold (ls @ (R r)). auto.
   destruct sl.
-  red; auto. fold (ls @ (S Outgoing pos ty)).
+  simpl; auto. fold (ls @ (S Outgoing pos ty)).
   change (Loc.type (S Incoming pos ty)) with (Loc.type (S Outgoing pos ty)). auto.
-  red; auto.
+  simpl; auto.
 Qed.
 
 Lemma wt_return_regs:
@@ -148,12 +167,18 @@ Proof.
   intros; red; intros.
   unfold return_regs, wt_locset, Locmap.get in *.
   destruct l; auto. destruct (is_callee_save r); auto.
+  generalize (H (R r)); intros. generalize (H0 (R r)); intros.
+  destruct (Locmap.mreg_access r); auto; destruct (is_callee_save r0); auto.
+  generalize (H (R r)); intros. generalize (H0 (R r)); intros.
+  destruct (Locmap.mreg_access r); auto; destruct (is_callee_save r0); auto.
+  generalize (H (S sl pos ty)); intros. auto.
 Qed.
 
 Lemma wt_init:
   wt_locset (Locmap.init Vundef).
 Proof.
-  red; intros. unfold Locmap.init, Locmap.get. red; auto.
+  red; intros. unfold Locmap.init, Locmap.get. simpl.
+  destruct l; try destruct (Locmap.mreg_access r); simpl; auto.
 Qed.
 
 Lemma wt_setpair:
@@ -273,7 +298,7 @@ Local Opaque mreg_type.
 - (* getstack *)
   simpl in *; InvBooleans.
   econstructor; eauto.
-  eapply wt_setreg; eauto. eapply Val.has_subtype; eauto. apply WTRS.
+  eapply wt_setreg; eauto. eapply Val.has_subtype; eauto. apply (WTRS (S sl ofs ty)).
   apply wt_undef_regs; auto.
 - (* setstack *)
   simpl in *; InvBooleans.
@@ -284,7 +309,7 @@ Local Opaque mreg_type.
   + (* move *)
     InvBooleans. exploit is_move_operation_correct; eauto. intros [EQ1 EQ2]; subst.
     simpl in H. inv H.
-    econstructor; eauto. apply wt_setreg. eapply Val.has_subtype; eauto. apply WTRS.
+    econstructor; eauto. apply wt_setreg. eapply Val.has_subtype; eauto. apply (WTRS (R src)).
     apply wt_undef_regs; auto.
   + (* other ops *)
     destruct (type_of_operation op) as [ty_args ty_res] eqn:TYOP. InvBooleans.

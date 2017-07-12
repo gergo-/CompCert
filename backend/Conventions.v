@@ -103,3 +103,14 @@ Proof.
   generalize (loc_arguments_bounded _ _ _ H0).
   generalize (typesize_pos ty). omega.
 Qed.
+
+Ltac rewrite_subreg_callee_save :=
+  match goal with
+  | [ H: subreg ?r ?s, I: is_callee_save ?r = _ |- _ ] =>
+    apply subreg_callee_save in H; rewrite I in H;
+      try rewrite <- H; rewrite_subreg_callee_save
+  | [ H: subreg ?r ?s, I: is_callee_save ?s = _ |- _ ] =>
+    apply subreg_callee_save in H; rewrite I in H;
+      try rewrite H; rewrite_subreg_callee_save
+  | _ => idtac
+  end.
