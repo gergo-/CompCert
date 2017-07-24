@@ -92,48 +92,61 @@ Definition mreg_type (r: mreg): typ :=
   | D8  | D9  | D10 | D11 | D12 | D13 | D14 | D15 => Tany64
   end.
 
-Definition subregs (r: mreg): list mreg :=
+Definition subregs (r: mreg): option (mreg * mreg) :=
   match r with
-  | D0  => S0 :: S1 :: nil
-  | D1  => S2 :: S3 :: nil
-  | D2  => S4 :: S5 :: nil
-  | D3  => S6 :: S7 :: nil
-  | D4  => S8 :: S9 :: nil
-  | D5  => S10 :: S11 :: nil
-  | D6  => S12 :: S13 :: nil
-  | D7  => S14 :: S15 :: nil
-  | D8  => S16 :: S17 :: nil
-  | D9  => S18 :: S19 :: nil
-  | D10 => S20 :: S21 :: nil
-  | D11 => S22 :: S23 :: nil
-  | D12 => S24 :: S25 :: nil
-  | D13 => S26 :: S27 :: nil
-  | D14 => S28 :: S29 :: nil
-  | D15 => S30 :: S31 :: nil
-  | _ => nil
+  | D0  => Some (S0,  S1)
+  | D1  => Some (S2,  S3)
+  | D2  => Some (S4,  S5)
+  | D3  => Some (S6,  S7)
+  | D4  => Some (S8,  S9)
+  | D5  => Some (S10, S11)
+  | D6  => Some (S12, S13)
+  | D7  => Some (S14, S15)
+  | D8  => Some (S16, S17)
+  | D9  => Some (S18, S19)
+  | D10 => Some (S20, S21)
+  | D11 => Some (S22, S23)
+  | D12 => Some (S24, S25)
+  | D13 => Some (S26, S27)
+  | D14 => Some (S28, S29)
+  | D15 => Some (S30, S31)
+  | _ => None
   end.
 
-Definition superregs (r: mreg): list mreg :=
-  match r with
-  | S0  | S1  => D0 :: nil
-  | S2  | S3  => D1 :: nil
-  | S4  | S5  => D2 :: nil
-  | S6  | S7  => D3 :: nil
-  | S8  | S9  => D4 :: nil
-  | S10 | S11 => D5 :: nil
-  | S12 | S13 => D6 :: nil
-  | S14 | S15 => D7 :: nil
-  | S16 | S17 => D8 :: nil
-  | S18 | S19 => D9 :: nil
-  | S20 | S21 => D10 :: nil
-  | S22 | S23 => D11 :: nil
-  | S24 | S25 => D12 :: nil
-  | S26 | S27 => D13 :: nil
-  | S28 | S29 => D14 :: nil
-  | S30 | S31 => D15 :: nil
-  | _ => nil
+Definition subreg (r1 r2: mreg) :=
+  match subregs r2 with
+  | Some (lo, hi) => r1 = lo \/ r1 = hi
+  | None => False
   end.
 
+Definition superregs (r: mreg): option mreg :=
+  match r with
+  | S0  | S1  => Some D0
+  | S2  | S3  => Some D1
+  | S4  | S5  => Some D2
+  | S6  | S7  => Some D3
+  | S8  | S9  => Some D4
+  | S10 | S11 => Some D5
+  | S12 | S13 => Some D6
+  | S14 | S15 => Some D7
+  | S16 | S17 => Some D8
+  | S18 | S19 => Some D9
+  | S20 | S21 => Some D10
+  | S22 | S23 => Some D11
+  | S24 | S25 => Some D12
+  | S26 | S27 => Some D13
+  | S28 | S29 => Some D14
+  | S30 | S31 => Some D15
+  | _ => None
+  end.
+
+Definition superreg (r1 r2: mreg) :=
+  match superregs r2 with
+  | Some s => r1 = s
+  | None => False
+  end.
+
+(*
 Ltac subreg_inversion :=
   match goal with
   | [ H: False |- _ ] => inversion H
@@ -141,47 +154,118 @@ Ltac subreg_inversion :=
     let H0 := fresh "H" in let H1 := fresh "H" in
       inversion H as [H0 | H1]; clear H; try inversion H0; subreg_inversion
   end.
+*)
+
+Definition subreg_list r :=
+  match subregs r with
+  | Some (lo, hi) => lo :: hi :: nil
+  | None => nil
+  end.
+
+Definition superreg_list r :=
+  match superregs r with
+  | Some s => s :: nil
+  | None => nil
+  end.
+
+Section REG_PARTS.
+
+(** Accessing parts of registers. *)
+
+Inductive part :=
+  | PFull (r: mreg)
+  | PHigh (r: mreg)
+  | PLow (r: mreg).
+
+Definition mreg_part (r: mreg): part :=
+  match r with
+  | S0  => PLow D0  | S1  => PHigh D0
+  | S2  => PLow D1  | S3  => PHigh D1
+  | S4  => PLow D2  | S5  => PHigh D2
+  | S6  => PLow D3  | S7  => PHigh D3
+  | S8  => PLow D4  | S9  => PHigh D4
+  | S10 => PLow D5  | S11 => PHigh D5
+  | S12 => PLow D6  | S13 => PHigh D6
+  | S14 => PLow D7  | S15 => PHigh D7
+  | S16 => PLow D8  | S17 => PHigh D8
+  | S18 => PLow D9  | S19 => PHigh D9
+  | S20 => PLow D10 | S21 => PHigh D10
+  | S22 => PLow D11 | S23 => PHigh D11
+  | S24 => PLow D12 | S25 => PHigh D12
+  | S26 => PLow D13 | S27 => PHigh D13
+  | S28 => PLow D14 | S29 => PHigh D14
+  | S30 => PLow D15 | S31 => PHigh D15
+  | r   => PFull r
+  end.
+
+Definition containing_reg (r: mreg): mreg :=
+  match mreg_part r with
+  | PFull s | PHigh s | PLow s => s
+  end.
+
+Lemma high_is_subreg: forall r s, mreg_part r = PHigh s -> subreg r s.
+Proof.
+  intros. unfold subreg. destruct r; inversion H; simpl; auto.
+Qed.
+
+Lemma low_is_subreg: forall r s, mreg_part r = PLow s -> subreg r s.
+Proof.
+  intros. unfold subreg. destruct r; inversion H; simpl; auto.
+Qed.
+
+Lemma full_not_subreg:
+  forall r, mreg_part r = PFull r -> superregs r = None.
+Proof.
+  intros. destruct r; compute in H; inversion H; auto.
+Qed.
+
+Lemma full_is_eq:
+  forall r s, mreg_part r = PFull s -> r = s.
+Proof.
+  intros. destruct r; compute in H; inversion H; auto.
+Qed.
+
+(* TODO: much more facts here *)
+
+End REG_PARTS.
 
 Section REG_ALIASING.
 
 (** Facts about register aliasing. *)
 
-Definition subreg (r1 r2: mreg) :=
-  In r1 (subregs r2).
-
 Definition subreg_dec (r1 r2: mreg): { subreg r1 r2 } + { ~ subreg r1 r2 }.
 Proof.
-  destruct (in_dec mreg_eq r1 (subregs r2)); auto.
+  unfold subreg.
+  destruct (subregs r2) eqn:S.
+  destruct p as [lo hi].
+  destruct (mreg_eq r1 lo); auto. destruct (mreg_eq r1 hi); tauto.
+  auto.
 Defined.
-
-Definition superreg (r1 r2: mreg) :=
-  In r1 (superregs r2).
 
 Definition superreg_dec (r1 r2: mreg): { superreg r1 r2 } + { ~ superreg r1 r2 }.
 Proof.
-  destruct (in_dec mreg_eq r1 (superregs r2)); auto.
+  unfold superreg.
+  destruct (superregs r2) eqn:S. destruct (mreg_eq r1 m); auto. auto.
 Defined.
 
 Lemma subregs_or_superregs:
-  forall r, subregs r = nil \/ superregs r = nil.
+  forall r, subregs r = None \/ superregs r = None.
 Proof.
   intros. destruct r; auto.
 Qed.
 
-Lemma subregs_superregs:
-  forall r1 r2,
-  In r1 (subregs r2) -> In r2 (superregs r1).
+Lemma subreg_superreg:
+  forall r1 r2, subreg r1 r2 -> superreg r2 r1.
 Proof.
-  destruct r2; simpl; try tauto;
-    intros; decompose [or] H; subst; compute; tauto.
+  unfold subreg, superreg. intros.
+  destruct r2; simpl in H; try contradiction; destruct H; subst; simpl; auto.
 Qed.
 
-Lemma superregs_subregs:
-  forall r1 r2,
-  In r1 (superregs r2) -> In r2 (subregs r1).
+Lemma superreg_subreg:
+  forall r1 r2, superreg r1 r2 -> subreg r2 r1.
 Proof.
-  destruct r2; simpl; try tauto;
-    intros; decompose [or] H; subst; compute; tauto.
+  unfold subreg, superreg. intros.
+  destruct r2; simpl in H; try contradiction; subst; simpl; auto.
 Qed.
 
 Lemma subreg_asymm:
@@ -213,31 +297,29 @@ Proof.
   unfold subreg. intros.
   destruct (subregs_or_superregs r2).
   - rewrite H1 in H. contradiction.
-  - apply subregs_superregs in H0. rewrite H1 in H0. contradiction.
+  - apply subreg_superreg in H0.
+    unfold superreg in H0. rewrite H1 in H0. contradiction.
 Qed.
 
 (** Registers overlap if one is a subregister of the other. Modifying a register
   modifies all overlapping registers as well. *)
 
 Definition overlap (r1 r2: mreg): Prop :=
-  In r1 (subregs r2) \/ In r1 (superregs r2).
+  subreg r1 r2 \/ subreg r2 r1.
 
 Lemma overlap_sym:
   forall r1 r2,
   overlap r1 r2 -> overlap r2 r1.
 Proof.
-  intros.
-  unfold overlap in *.
-  inv H.
-  - apply subregs_superregs in H0. tauto.
-  - apply superregs_subregs in H0. tauto.
+  intros. unfold overlap in *. tauto.
 Qed.
 
 Definition overlap_dec (r1 r2: mreg): { overlap r1 r2 } + { ~ overlap r1 r2 }.
 Proof.
   intros. unfold overlap.
-  destruct (in_dec mreg_eq r1 (subregs r2)); auto.
-  destruct (in_dec mreg_eq r1 (superregs r2)); tauto.
+  destruct (subreg_dec r1 r2); auto.
+  destruct (subreg_dec r2 r1); auto.
+  tauto.
 Defined.
 
 (** Registers may be different in the sense of [<>] but still overlap. The
@@ -278,6 +360,13 @@ Proof.
   destruct (overlap_dec r1 r2); tauto.
 Defined.
 
+Lemma subreg_not_diff:
+  forall r s,
+  subreg r s -> ~ mreg_diff r s.
+Proof.
+  intros. unfold not, mreg_diff, overlap. tauto.
+Qed.
+
 (** We group registers into pairwise disjoint "families" (for lack of a better
   term) that are closed under aliasing. That is, a register's family contains
   all of its aliases, but also its "siblings". For example, [S0]'s family
@@ -315,8 +404,7 @@ Qed.
 Lemma overlap_same_family:
   forall r1 r2, overlap r1 r2 -> mreg_family r1 = mreg_family r2.
 Proof.
-  intros. destruct H; auto using subreg_same_family.
-  apply superregs_subregs in H; auto using eq_sym, subreg_same_family.
+  intros. destruct H; auto using eq_sym, subreg_same_family.
 Qed.
 
 Lemma not_same_family_diff:
@@ -576,14 +664,14 @@ Module OrderedMreg <: OrderedType.
         * rewrite D in A. apply not_eq_sym, lt_not_eq; auto.
       + generalize (lt_low_bound_not_subreg r r' A); intros.
         generalize (lt_low_bound_not_subreg' r r' A); intros.
-        unfold overlap. intuition auto. apply superregs_subregs in H2; auto.
+        unfold overlap. intuition auto.
     - split.
       + generalize (lt_or_eq_high_bound r); intros [C | D].
         * eapply lt_not_eq, lt_trans; eauto.
         * rewrite <- D in B. apply lt_not_eq; auto.
       + generalize (high_bound_lt_not_subreg r r' B); intros.
         generalize (high_bound_lt_not_subreg' r r' B); intros.
-        unfold overlap. intuition auto. apply superregs_subregs in H2; auto.
+        unfold overlap. intuition auto.
   Qed.
 
   Lemma diff_outside_interval:
@@ -593,9 +681,7 @@ Module OrderedMreg <: OrderedType.
     intros r r' (Neq & Noverlap). unfold overlap in Noverlap.
     apply Decidable.not_or in Noverlap; destruct Noverlap as [A B].
     (* FIXME: slow computation *)
-    destruct r, r'; try congruence; compute; try tauto;
-      contradict A; simpl; auto;
-      contradict B; simpl; auto.
+    destruct r, r'; try congruence; compute in *; tauto.
   Qed.
 
 End OrderedMreg.

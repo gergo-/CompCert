@@ -124,7 +124,8 @@ Lemma callee_caller_save_diff:
   forall r1 r2,
   is_callee_save r1 <> is_callee_save r2 -> mreg_diff r1 r2.
 Proof.
-  intros. split. congruence. contradict H. destruct H; auto using subreg_callee_save, superreg_callee_save.
+  intros. split. congruence. contradict H.
+  destruct H; auto using subreg_callee_save, eq_sym.
 Qed.
 
 Lemma same_family_callee_save:

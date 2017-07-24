@@ -142,7 +142,7 @@ Fixpoint undef_regs (rl: list mreg) (rs: regset) {struct rl} : regset :=
 (* Set register [r] to [v] in regset [rs], taking register aliasing into account
   by first making all of [r]'s aliases undefined. *)
 Definition regmap_set r v rs :=
-  let rs' := undef_regs (subregs r) (undef_regs (superregs r) rs) in
+  let rs' := undef_regs (subreg_list r) (undef_regs (superreg_list r) rs) in
   Regmap.set r v rs'.
 
 Notation "a ## b" := (List.map a b) (at level 1).
@@ -169,8 +169,12 @@ Proof.
   unfold regmap_set, Regmap.set.
   destruct (RegEq.eq r2 r1); try congruence.
   rewrite !undef_regs_other. auto.
-  contradict H0. auto using superregs_subregs.
-  contradict H1. auto using subregs_superregs.
+  contradict H0. apply superreg_subreg.
+  unfold superreg. unfold superreg_list in H0.
+  destruct (superregs r1); compute in H0; intuition auto.
+  contradict H1.
+  unfold subreg. unfold subreg_list in H1.
+  destruct (subregs r1); try destruct p; compute in H1; intuition auto.
 Qed.
 
 Lemma regmap_gss:
