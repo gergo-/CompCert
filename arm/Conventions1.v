@@ -102,6 +102,38 @@ Definition is_float_reg (r: mreg): bool :=
   | D8  | D9  | D10 | D11 | D12 | D13 | D14 | D15 => true
   end.
 
+Lemma subreg_callee_save:
+  forall r1 r2,
+  subreg r1 r2 -> is_callee_save r1 = is_callee_save r2.
+Proof.
+  intros.
+  destruct r2; compute in H; try contradiction;
+    decompose [or] H; try contradiction; subst; auto.
+Qed.
+
+Lemma superreg_callee_save:
+  forall r1 r2,
+  superreg r1 r2 -> is_callee_save r1 = is_callee_save r2.
+Proof.
+  intros.
+  destruct r2; compute in H; try contradiction;
+    decompose [or] H; try contradiction; subst; auto.
+Qed.
+
+Lemma callee_caller_save_diff:
+  forall r1 r2,
+  is_callee_save r1 <> is_callee_save r2 -> mreg_diff r1 r2.
+Proof.
+  intros. split. congruence. contradict H. destruct H; auto using subreg_callee_save, superreg_callee_save.
+Qed.
+
+Lemma same_family_callee_save:
+  forall r1 r2,
+  mreg_family r1 = mreg_family r2 -> is_callee_save r1 = is_callee_save r2.
+Proof.
+  intros. destruct r1; destruct r2; simpl in *; congruence.
+Qed.
+
 (** * Function calling conventions *)
 
 (** The functions in this section determine the locations (machine registers
@@ -182,14 +214,14 @@ Lemma loc_result_pair:
   match loc_result sg with
   | One _ => True
   | Twolong r1 r2 =>
-        r1 <> r2 /\ sg.(sig_res) = Some Tlong
+        mreg_diff r1 r2 /\ sg.(sig_res) = Some Tlong
      /\ subtype Tint (mreg_type r1) = true /\ subtype Tint (mreg_type r2) = true
      /\ Archi.ptr64 = false
   end.
 Proof.
   intros; unfold loc_result; destruct (sig_res sg) as [[]|]; destruct Archi.big_endian; auto.
-  intuition congruence.
-  intuition congruence.
+  compute. intuition congruence.
+  compute. intuition congruence.
 Qed.
 
 (** The location of the result depends only on the result part of the signature *)

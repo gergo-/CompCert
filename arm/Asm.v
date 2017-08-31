@@ -97,6 +97,50 @@ End PregEq.
 
 Module Pregmap := EMap(PregEq).
 
+(** Aliasing relationships on [preg] analogous to [mreg]. *)
+
+Definition sub_pregs (r: preg): list preg :=
+  match r with
+  | DR0  => SR SR0  :: SR SR1  :: nil
+  | DR1  => SR SR2  :: SR SR3  :: nil
+  | DR2  => SR SR4  :: SR SR5  :: nil
+  | DR3  => SR SR6  :: SR SR7  :: nil
+  | DR4  => SR SR8  :: SR SR9  :: nil
+  | DR5  => SR SR10 :: SR SR11 :: nil
+  | DR6  => SR SR12 :: SR SR13 :: nil
+  | DR7  => SR SR14 :: SR SR15 :: nil
+  | DR8  => SR SR16 :: SR SR17 :: nil
+  | DR9  => SR SR18 :: SR SR19 :: nil
+  | DR10 => SR SR20 :: SR SR21 :: nil
+  | DR11 => SR SR22 :: SR SR23 :: nil
+  | DR12 => SR SR24 :: SR SR25 :: nil
+  | DR13 => SR SR26 :: SR SR27 :: nil
+  | DR14 => SR SR28 :: SR SR29 :: nil
+  | DR15 => SR SR30 :: SR SR31 :: nil
+  | _ => nil
+  end.
+
+Definition super_pregs (r: preg): list preg :=
+  match r with
+  | SR0  | SR1  => FR DR0  :: nil
+  | SR2  | SR3  => FR DR1  :: nil
+  | SR4  | SR5  => FR DR2  :: nil
+  | SR6  | SR7  => FR DR3  :: nil
+  | SR8  | SR9  => FR DR4  :: nil
+  | SR10 | SR11 => FR DR5  :: nil
+  | SR12 | SR13 => FR DR6  :: nil
+  | SR14 | SR15 => FR DR7  :: nil
+  | SR16 | SR17 => FR DR8  :: nil
+  | SR18 | SR19 => FR DR9  :: nil
+  | SR20 | SR21 => FR DR10 :: nil
+  | SR22 | SR23 => FR DR11 :: nil
+  | SR24 | SR25 => FR DR12 :: nil
+  | SR26 | SR27 => FR DR13 :: nil
+  | SR28 | SR29 => FR DR14 :: nil
+  | SR30 | SR31 => FR DR15 :: nil
+  | _ => nil
+  end.
+
 (** Conventional names for stack pointer ([SP]) and return address ([RA]) *)
 
 Notation "'SP'" := IR13 (only parsing) : asm.
@@ -311,18 +355,24 @@ Definition program := AST.program fundef unit.
 Definition regset := Pregmap.t val.
 Definition genv := Genv.t fundef unit.
 
-Notation "a # b" := (a b) (at level 1, only parsing) : asm.
-Notation "a # b <- c" := (Pregmap.set b c a) (at level 1, b at next level) : asm.
-
-Open Scope asm.
-
 (** Undefining some registers *)
 
 Fixpoint undef_regs (l: list preg) (rs: regset) : regset :=
   match l with
   | nil => rs
-  | r :: l' => undef_regs l' (rs#r <- Vundef)
+  | r :: l' => Pregmap.set r Vundef (undef_regs l' rs)
   end.
+
+(* Set register [r] to [v] in regset [rs], taking register aliasing into account
+  by first making all of [r]'s aliases undefined. *)
+Definition pregmap_set r v rs :=
+  let rs' := undef_regs (sub_pregs r) (undef_regs (super_pregs r) rs) in
+  Pregmap.set r v rs'.
+
+Notation "a # b" := (a b) (at level 1, only parsing) : asm.
+Notation "a # b <- c" := (pregmap_set b c a) (at level 1, b at next level) : asm.
+
+Open Scope asm.
 
 (** Undefining the condition codes *)
 
@@ -343,7 +393,8 @@ Definition set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
   match res with
   | BR r => rs#r <- v
   | BR_none => rs
-  | BR_splitlong hi lo => rs #hi <- (Val.hiword v) #lo <- (Val.loword v)
+  | BR_splitlong hi lo =>
+      Pregmap.set lo (Val.loword v) (Pregmap.set hi (Val.hiword v) rs)
   end.
 
 Section RELSEM.

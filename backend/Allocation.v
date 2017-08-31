@@ -753,9 +753,9 @@ Function remove_equations_res (r: reg) (p: rpair mreg) (e: eqs) : option eqs :=
   | One mr =>
       Some (remove_equation (Eq Full r (R mr)) e)
   | Twolong mr1 mr2 =>
-      if mreg_eq mr2 mr1
-      then None
-      else Some (remove_equation (Eq Low r (R mr2)) (remove_equation (Eq High r (R mr1)) e))
+      if mreg_diff_dec mr2 mr1
+      then Some (remove_equation (Eq Low r (R mr2)) (remove_equation (Eq High r (R mr1)) e))
+      else None
   end.
 
 (** [add_equations_ros] adds an equation, if needed, between an optional
@@ -851,9 +851,10 @@ Definition remove_equations_builtin_res
       assertion (typ_eq (env r) Tlong);
       assertion (subtype Tint (mreg_type rhi));
       assertion (subtype Tint (mreg_type rlo));
-      if mreg_eq rhi rlo then None else
+      if mreg_diff_dec rhi rlo then
         Some (remove_equation (Eq Low r (R rlo))
                 (remove_equation (Eq High r (R rhi)) e))
+      else None
   | BR_none, BR_none => Some e
   | _, _ => None
   end.

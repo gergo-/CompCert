@@ -42,7 +42,8 @@ Record bounds : Type := mkbounds {
   bound_outgoing_pos: bound_outgoing >= 0;
   bound_stack_data_pos: bound_stack_data >= 0;
   used_callee_save_norepet: list_norepet used_callee_save;
-  used_callee_save_prop: forall r, In r used_callee_save -> is_callee_save r = true
+  used_callee_save_prop: forall r, In r used_callee_save -> is_callee_save r = true;
+  used_callee_save_closed: forall r, In r used_callee_save -> (forall r', overlap r r' -> In r' used_callee_save)
 }.
 
 (** The following predicates define the correctness of a set of bounds
@@ -89,8 +90,14 @@ Section BOUNDS.
 
 Variable f: function.
 
+Definition add_regs (u: RegSet.t) (rs: list mreg) : RegSet.t :=
+  fold_left (fun u r => RegSet.add r u) rs u.
+
 Definition record_reg (u: RegSet.t) (r: mreg) : RegSet.t :=
-  if is_callee_save r then RegSet.add r u else u.
+  if is_callee_save r then
+    let u' := add_regs u (mreg_family r) in
+    RegSet.add r u'
+  else u.
 
 Definition record_regs (u: RegSet.t) (rl: list mreg) : RegSet.t :=
   fold_left record_reg rl u.
@@ -194,6 +201,46 @@ Proof.
   destruct H1. subst a. apply fold_left_preserves; auto. apply IHl; auto.
 Qed.
 
+Remark add_regs_preserves_in:
+  forall l r u,
+  RegSet.In r u -> RegSet.In r (add_regs u l).
+Proof.
+  induction l; simpl; intros. auto. apply IHl.
+  destruct (mreg_eq r a). apply RegSet.add_1; auto. apply RegSet.add_2; auto.
+Qed.
+
+Remark regset_add_swap:
+  forall r a b u,
+  RegSet.In r (RegSet.add a (RegSet.add b u)) -> RegSet.In r (RegSet.add b (RegSet.add a u)).
+Proof.
+  intros. destruct (mreg_eq r a), (mreg_eq r b); auto using RegSet.add_1, RegSet.add_2.
+  apply RegSet.add_3, RegSet.add_3 in H; auto. apply RegSet.add_2, RegSet.add_2; auto.
+Qed.
+
+Remark add_regs_not_in_list:
+  forall l r u,
+  RegSet.In r (add_regs u l) -> ~ In r l -> RegSet.In r u.
+Proof.
+  induction l; simpl; intros. auto.
+  apply Decidable.not_or in H0; destruct H0.
+  apply IHl in H; auto. eapply RegSet.add_3; eauto.
+Qed.
+
+Lemma add_regs_in_list:
+  forall l r u,
+  In r l -> RegSet.In r (add_regs u l).
+Proof.
+  intros. unfold add_regs.
+  apply fold_left_ensures with (b0 := r); auto using RegSet.add_1, RegSet.add_2.
+Qed.
+
+Remark add_regs_split:
+  forall r u l,
+  RegSet.In r (add_regs u l) -> RegSet.In r u \/ In r l.
+Proof.
+  intros. destruct (In_dec mreg_eq r l); eauto using add_regs_not_in_list.
+Qed.
+
 Definition only_callee_saves (u: RegSet.t) : Prop :=
   forall r, RegSet.In r u -> is_callee_save r = true.
 
@@ -201,7 +248,12 @@ Lemma record_reg_only: forall u r, only_callee_saves u -> only_callee_saves (rec
 Proof.
   unfold only_callee_saves, record_reg; intros.
   destruct (is_callee_save r) eqn:CS; auto.
-  destruct (mreg_eq r r0). congruence. apply H; eapply RegSet.add_3; eauto.
+  destruct (mreg_eq r0 r). subst; auto.
+  apply RegSet.add_3 in H0; auto.
+  apply add_regs_split in H0; destruct H0.
+  auto.
+  apply partitioned_families in H0.
+  eauto using same_family_callee_save.
 Qed.
 
 Lemma record_regs_only: forall rl u, only_callee_saves u -> only_callee_saves (record_regs u rl).
@@ -220,6 +272,57 @@ Proof.
   intros. unfold record_regs_of_function.
   apply fold_left_preserves. apply record_regs_of_instr_only.
   red; intros. eelim RegSet.empty_1; eauto.
+Qed.
+
+Definition closed_under_families (u: RegSet.t) : Prop :=
+  forall r s, RegSet.In r u -> mreg_family r = mreg_family s -> RegSet.In s u.
+
+Lemma record_reg_closed: forall r u, closed_under_families u -> closed_under_families (record_reg u r).
+Proof.
+  unfold closed_under_families, record_reg; intros.
+  destruct (is_callee_save r) eqn:CS; eauto.
+
+  assert (Cases: r0 = r \/ mreg_family r0 = mreg_family r \/ RegSet.In r0 u).
+  { destruct (mreg_eq r0 r). left; assumption. right.
+    apply RegSet.add_3 in H0; auto.
+    apply add_regs_split in H0; destruct H0.
+    - right. assumption.
+    - left. apply partitioned_families. assumption. }
+
+  apply RegSet.add_2.
+  destruct Cases as [Eq|[Family|InU]].
+  - subst. apply add_regs_in_list. apply partitioned_families. auto.
+  - apply add_regs_in_list. apply partitioned_families. congruence.
+  - apply add_regs_preserves_in. eauto.
+Qed.
+
+Lemma record_regs_closed: forall rl u, closed_under_families u -> closed_under_families (record_regs u rl).
+Proof.
+  intros. unfold record_regs. apply fold_left_preserves; auto using record_reg_closed.
+Qed.
+
+Lemma record_regs_of_instr_closed: forall u i, closed_under_families u -> closed_under_families (record_regs_of_instr u i).
+Proof.
+  intros. destruct i; simpl; auto using record_reg_closed, record_regs_closed.
+Qed.
+
+Lemma record_regs_of_function_closed:
+  closed_under_families record_regs_of_function.
+Proof.
+  intros. unfold record_regs_of_function.
+  apply fold_left_preserves. apply record_regs_of_instr_closed.
+  red; intros. eelim RegSet.empty_1; eauto.
+Qed.
+
+Lemma in_elements_in_regset: forall r s, In r (RegSet.elements s) -> RegSet.In r s.
+Proof.
+  intros. apply RegSet.elements_2. apply InA_alt. exists r; auto.
+Qed.
+
+Lemma in_regset_in_elements: forall r s, RegSet.In r s -> In r (RegSet.elements s).
+Proof.
+  intros. apply RegSet.elements_1 in H. apply InA_alt in H.
+  destruct H. inv H. auto.
 Qed.
 
 Program Definition function_bounds := {|
@@ -248,12 +351,17 @@ Next Obligation.
   apply record_regs_of_function_only. apply RegSet.elements_2.
   apply InA_alt. exists r; auto.
 Qed.
+Next Obligation.
+  apply in_elements_in_regset in H. apply in_regset_in_elements.
+  eauto using overlap_same_family, record_regs_of_function_closed.
+Qed.
 
 (** We now show the correctness of the inferred bounds. *)
 
 Lemma record_reg_incr: forall u r r', RegSet.In r' u -> RegSet.In r' (record_reg u r).
 Proof.
   unfold record_reg; intros. destruct (is_callee_save r); auto. apply RegSet.add_2; auto.
+  auto using add_regs_preserves_in.
 Qed.
 
 Lemma record_reg_ok: forall u r, is_callee_save r = true -> RegSet.In r (record_reg u r).
@@ -377,6 +485,34 @@ Proof.
   exploit record_regs_of_function_ok; eauto. intros.
   apply RegSet.elements_1 in H2. rewrite InA_alt in H2. destruct H2 as (r' & A & B).
   subst r'; auto.
+Qed.
+
+Lemma regset_in_elements:
+  forall u r, RegSet.In r u -> In r (RegSet.elements u).
+Proof.
+  intros. apply RegSet.elements_1 in H.
+  induction (RegSet.elements u).
+  - inversion H.
+  - inversion H.
+    + subst. constructor; auto.
+    + auto using in_cons.
+Qed.
+
+Corollary mreg_within_bounds_diff:
+  forall r1 r2,
+  mreg_within_bounds function_bounds r1 ->
+  ~ mreg_within_bounds function_bounds r2 ->
+  mreg_diff r1 r2.
+Proof.
+  intros.
+  unfold mreg_diff. split; contradict H0. subst; auto.
+  unfold mreg_within_bounds in *; simpl in *. intros.
+  apply overlap_same_family in H0.
+  assert (R1: RegSet.In r1 record_regs_of_function).
+  { apply RegSet.elements_2, In_InA; auto.
+    exploit same_family_callee_save; eauto. }
+  exploit record_regs_of_function_closed; eauto; intros.
+  auto using regset_in_elements.
 Qed.
 
 Lemma slot_is_within_bounds:
