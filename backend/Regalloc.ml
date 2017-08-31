@@ -1062,7 +1062,7 @@ let make_parmove srcs dsts itmp ftmp k =
   assert (Array.length dst = n);
   let status = Array.make n To_move in
   let temp_for_cls cls =
-    match cls with 0 -> itmp | 1 -> ftmp | _ -> assert false in
+    match cls with 0 -> itmp | 1 | 2 -> ftmp | _ -> assert false in
   let temp_for_q q =
     match q with Q32 -> itmp | Q64 -> ftmp in
   let code = ref [] in

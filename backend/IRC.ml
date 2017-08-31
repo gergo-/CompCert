@@ -230,22 +230,29 @@ type graph = {
 
 (* Register classes and reserved registers *)
 
-(* We have two main register classes:
+(* We have three main register classes:
      0 for integer registers
-     1 for floating-point registers
-   plus a third pseudo-class 2 that has no registers and forces
-   stack allocation.  XTL variables are mapped to classes 0 and 1
-   according to their types.  A variable can be forced into class 2
-   by giving it a negative spill cost. *)
+     1 for single-precision floating-point registers
+     2 for double-precision floating-point registers
+   plus a fourth pseudo-class 3 that has no registers and forces
+   stack allocation.  XTL variables are mapped to classes 0 to 2
+   according to their types.  A variable can be forced into class 3
+   by giving it a negative spill cost.
+   Not all architectures have single-precision registers, so the mapping
+   from data types to register classes goes through an architecture-specific
+   function. *)
 
-let class_of_type = function
-  | Tint | Tlong -> 0
-  | Tfloat | Tsingle -> 1
-  | Tany32 -> 0
-  | Tany64 -> 1
+let class_of_type typ =
+  match Machregs.regclass_of_type typ with
+  | RCint -> 0
+  | RCsingle -> 1
+  | RCfloat -> 2
+  | RCany -> 2
 
 let class_of_reg r =
-  if Conventions1.is_float_reg r then 1 else 0
+  if Conventions1.is_single_reg r then 1
+  else if Conventions1.is_float_reg r then 2
+  else 0
 
 let class_of_loc = function
   | R r -> class_of_reg r
@@ -266,26 +273,33 @@ let rec remove_reserved = function
 
 let init costs =
   let int_caller_save = remove_reserved int_caller_save_regs
+  and single_caller_save = remove_reserved single_caller_save_regs
   and float_caller_save = remove_reserved float_caller_save_regs
   and int_callee_save = remove_reserved int_callee_save_regs
+  and single_callee_save = remove_reserved single_callee_save_regs
   and float_callee_save = remove_reserved float_callee_save_regs in
   {
     caller_save_registers =
       [| Array.of_list int_caller_save;
+         Array.of_list single_caller_save;
          Array.of_list float_caller_save;
          [||] |];
     callee_save_registers =
       [| Array.of_list int_callee_save;
+         Array.of_list single_callee_save;
          Array.of_list float_callee_save;
          [||] |];
     num_available_registers =
       [| List.length int_caller_save + List.length int_callee_save;
+         List.length single_caller_save + List.length single_callee_save;
          List.length float_caller_save + List.length float_callee_save;
          0 |];
     start_points =
-      [| 0; 0; 0 |];
+      [| 0; 0; 0; 0 |];
     allocatable_registers =
-      int_caller_save @ int_callee_save @ float_caller_save @ float_callee_save;
+      int_caller_save @ int_callee_save @
+      single_caller_save @ single_callee_save @
+      float_caller_save @ float_callee_save;
     stats_of_reg = costs;
     varTable = Hashtbl.create 253;
     nextIdent = 0;
@@ -357,7 +371,8 @@ let interfere g n1 n2 =
 let recordInterf n1 n2 =
   match n2.color with
   | None | Some (R _) ->
-      if n1.regclass = n2.regclass then begin
+      if n1.regclass = n2.regclass || regclass_interference n1.typ n2.typ
+      then begin
         n1.adjlist <- n2 :: n1.adjlist;
         n1.degree  <- 1 + n1.degree
       end else begin
@@ -862,7 +877,11 @@ let find_slot conflicts typ =
 
 let record_reg_conflict cnf n =
   match (getAlias n).color with
-  | Some (R r) -> Regset.add r cnf
+  | Some (R r) ->
+      let add_reg cnf s = Regset.add s cnf in
+      let cnf' = List.fold_left add_reg cnf (Machregs.subregs r) in
+      let cnf'' = List.fold_left add_reg cnf' (Machregs.superregs r) in
+      Regset.add r cnf''
   | _ -> cnf
 
 let record_slot_conflict cnf n =
@@ -908,7 +927,8 @@ let location_of_var g v =
       with Not_found ->
         match class_of_type ty with
         | 0 -> R dummy_int_reg
-        | 1 -> R dummy_float_reg
+        | 1 -> R dummy_single_reg
+        | 2 -> R dummy_float_reg
         | _ -> assert false
 
 (* The exported interface *)

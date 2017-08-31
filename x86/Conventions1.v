@@ -44,6 +44,8 @@ Definition int_caller_save_regs :=
   then AX :: CX :: DX :: SI :: DI :: R8 :: R9 :: R10 :: R11 :: nil
   else AX :: CX :: DX :: nil.
 
+Definition single_caller_save_regs := @nil mreg.
+
 Definition float_caller_save_regs :=
   if Archi.ptr64
   then X0 :: X1 :: X2 :: X3 :: X4 :: X5 :: X6 :: X7 ::
@@ -55,16 +57,24 @@ Definition int_callee_save_regs :=
   then BX :: BP :: R12 :: R13 :: R14 :: R15 :: nil
   else BX :: SI :: DI :: BP :: nil.
 
+Definition single_callee_save_regs := @nil mreg.
+
 Definition float_callee_save_regs : list mreg := nil.
 
 Definition destroyed_at_call :=
   List.filter (fun r => negb (is_callee_save r)) all_mregs.
 
 Definition dummy_int_reg := AX.     (**r Used in [Regalloc]. *)
+Definition dummy_single_reg := X0.  (**r Used in [Regalloc]. *)
 Definition dummy_float_reg := X0.   (**r Used in [Regalloc]. *)
 
 Definition callee_save_type := mreg_type.
   
+Definition is_single_reg (r: mreg) :=
+  match r with
+  | _ => false
+  end.
+
 Definition is_float_reg (r: mreg) :=
   match r with
   | AX | BX | CX | DX | SI | DI | BP
