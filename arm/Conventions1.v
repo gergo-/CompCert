@@ -46,11 +46,15 @@ Definition is_callee_save (r: mreg): bool :=
 Definition int_caller_save_regs :=
   R0 :: R1 :: R2 :: R3 :: R12 :: nil.
 
+Definition single_caller_save_regs := @nil mreg.
+
 Definition float_caller_save_regs :=
   F0 :: F1 :: F2 :: F3 :: F4 :: F5 :: F6 :: F7 :: nil.
 
 Definition int_callee_save_regs :=
   R4 :: R5 :: R6 :: R7 :: R8 :: R9 :: R10 :: R11 :: nil.
+
+Definition single_callee_save_regs := @nil mreg.
 
 Definition float_callee_save_regs :=
   F8 :: F9 :: F10 :: F11 :: F12 :: F13 :: F14 :: F15 :: nil.
@@ -59,10 +63,16 @@ Definition destroyed_at_call :=
   List.filter (fun r => negb (is_callee_save r)) all_mregs.
 
 Definition dummy_int_reg := R0.     (**r Used in [Coloring]. *)
+Definition dummy_single_reg := F0.  (**r Used in [Coloring]. *)
 Definition dummy_float_reg := F0.   (**r Used in [Coloring]. *)
 
 Definition callee_save_type := mreg_type.
   
+Definition is_single_reg (r: mreg): bool :=
+  match r with
+  | _ => false
+  end.
+
 Definition is_float_reg (r: mreg): bool :=
   match r with
   | R0  | R1  | R2  | R3

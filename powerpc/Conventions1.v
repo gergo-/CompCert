@@ -64,6 +64,11 @@ Definition callee_save_type (r: mreg): typ :=
   | F24 | F25 | F26 | F27 | F28 | F29 | F30 | F31 => Tany64
   end.
 
+Definition is_single_reg (r: mreg): bool :=
+  match r with
+  | _ => false
+  end.
+
 Definition is_float_reg (r: mreg): bool :=
   match r with
   | R3  | R4  | R5  | R6  | R7  | R8  | R9  | R10  | R11 | R12
@@ -78,6 +83,8 @@ Definition is_float_reg (r: mreg): bool :=
 Definition int_caller_save_regs :=
   R3 :: R4 :: R5 :: R6 :: R7 :: R8 :: R9 :: R10 :: R11 :: R12 :: nil.
 
+Definition single_caller_save_regs := @nil mreg.
+
 Definition float_caller_save_regs :=
   F0 :: F1 :: F2 :: F3 :: F4 :: F5 :: F6 :: F7 :: F8 :: F9 :: F10 :: F11 :: F12 :: F13 :: nil.
 
@@ -85,11 +92,14 @@ Definition int_callee_save_regs :=
   R31 :: R30 :: R29 :: R28 :: R27 :: R26 :: R25 :: R24 :: R23 ::
   R22 :: R21 :: R20 :: R19 :: R18 :: R17 :: R16 :: R15 :: R14 :: nil.
 
+Definition single_callee_save_regs := @nil mreg.
+
 Definition float_callee_save_regs :=
   F31 :: F30 :: F29 :: F28 :: F27 :: F26 :: F25 :: F24 :: F23 ::
   F22 :: F21 :: F20 :: F19 :: F18 :: F17 :: F16 :: F15 :: F14 :: nil.
 
 Definition dummy_int_reg := R3.     (**r Used in [Coloring]. *)
+Definition dummy_single_reg := F0.  (**r Used in [Coloring]. *)
 Definition dummy_float_reg := F0.   (**r Used in [Coloring]. *)
 
 (** * Function calling conventions *)

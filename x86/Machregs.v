@@ -73,6 +73,36 @@ Definition mreg_type (r: mreg): typ :=
   | FP0 => Tany64
   end.
 
+Definition subregs (r: mreg): list mreg :=
+  match r with
+  | _ => nil
+  end.
+
+Definition superregs (r: mreg): list mreg :=
+  match r with
+  | _ => nil
+  end.
+
+(** Architecture-specific mapping from data types to register classes. *)
+
+Inductive regclass := RCint | RCsingle | RCfloat | RCany.
+
+Definition regclass_of_type (t: typ): regclass :=
+  match t with
+  | Tint | Tlong => RCint
+  | Tsingle | Tfloat => RCfloat
+  | Tany32 | Tany64 => RCany
+  end.
+
+(** Interference between register classes: [regclass_interference t1 t2] is
+  [true] if registers in the register classes for distinct types [t1] and
+  [t2] may (partially) alias or interfere in some other way. *)
+
+Definition regclass_interference (t1 t2: typ): bool :=
+  match t1, t2 with
+  | _, _ => false
+  end.
+
 Local Open Scope positive_scope.
 
 Module IndexedMreg <: INDEXED_TYPE.
