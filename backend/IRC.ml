@@ -878,8 +878,8 @@ let record_reg_conflict cnf n =
   match (getAlias n).color with
   | Some (R r) ->
       let add_reg cnf s = Regset.add s cnf in
-      let cnf' = List.fold_left add_reg cnf (Machregs.subregs r) in
-      let cnf'' = List.fold_left add_reg cnf' (Machregs.superregs r) in
+      let cnf' = List.fold_left add_reg cnf (Machregs.subreg_list r) in
+      let cnf'' = List.fold_left add_reg cnf' (Machregs.superreg_list r) in
       Regset.add r cnf''
   | _ -> cnf
 

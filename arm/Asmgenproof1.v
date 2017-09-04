@@ -52,9 +52,30 @@ Lemma ireg_of_no_overlap_R14:
   forall m r, ireg_of m = OK r -> ~ preg_overlap (IR r) (IR IR14).
 Proof.
   intros. erewrite <- ireg_of_eq; eauto with asmgen.
-  destruct m; compute; tauto.
+  destruct m; compute; try tauto; intros; decompose [or] H0; congruence.
 Qed.
 Hint Resolve ireg_of_no_overlap_R14: asmgen.
+
+Lemma preg_no_overlap_R12:
+  forall (r: preg), ~ preg_overlap r (IR IR12).
+Proof.
+  intros. unfold preg_overlap, sub_preg, not. simpl; intros [F | F]; auto.
+  destruct r as [r'|r'|r'|r'|]; try destruct r'; simpl in F; auto; inv F; inv H.
+Qed.
+
+Lemma preg_no_overlap_R14:
+  forall (r: preg), ~ preg_overlap r (IR IR14).
+Proof.
+  intros. unfold preg_overlap, sub_preg, not. simpl; intros [F | F]; auto.
+  destruct r as [r'|r'|r'|r'|]; try destruct r'; simpl in F; auto; inv F; inv H.
+Qed.
+
+Lemma ireg_diff_no_overlap:
+  forall (r: preg) (i: ireg), r <> (IR i) -> ~ preg_overlap r (IR i).
+Proof.
+  intros. unfold preg_overlap, sub_preg, not. simpl; intros [F | F]; auto.
+  destruct r as [r'|r'|r'|r'|]; try destruct r'; simpl in F; auto; inv F; inv H0.
+Qed.
 
 (** [undef_flags] and [nextinstr_nf] *)
 
@@ -88,6 +109,11 @@ Proof.
   intros. contradict H. apply preg_overlap_sym, special_preg_no_overlap in H; auto.
 Qed.
 
+Lemma if_preg_no_overlap_PC': forall r, if_preg r = true -> ~ preg_overlap r PC.
+Proof.
+  intros. contradict H. apply special_preg_no_overlap in H; auto.
+Qed.
+
 Hint Resolve data_if_preg if_preg_not_PC if_preg_no_overlap_PC: asmgen.
 
 Lemma nextinstr_nf_inv:
@@ -112,8 +138,10 @@ Ltac Simplif :=
   || (rewrite pregmap_gss)
   || (rewrite nextinstr_pc)
   || (rewrite nextinstr_nf_pc)
-  || (rewrite Pregmap.gso by eauto with asmgen)
-  || (rewrite pregmap_gso by eauto with asmgen)); auto with asmgen.
+  || (rewrite Pregmap.gso by eauto)
+  || (rewrite pregmap_gso
+      by eauto using preg_no_overlap_R14, ireg_diff_no_overlap with asmgen))
+  ; auto with asmgen.
 
 Ltac Simpl := repeat Simplif.
 
@@ -533,7 +561,8 @@ Proof.
   rewrite (Int.add_commut (Int.neg (mk_immed n))).
   rewrite Int.add_neg_zero. rewrite Int.add_zero. auto.
   intros; apply C; auto with asmgen.
-  compute; tauto.
+  compute; try tauto.
+  intros; inv H1; auto. destruct r; auto; destruct f; auto; inv H2; inv H1.
   exists rs2; split; auto. eapply exec_straight_trans; eauto.
 Qed.
 
@@ -666,7 +695,7 @@ Proof.
   unfold preg_overlap; simpl; tauto.
   auto.
   split. intros; Simpl. rewrite C; eauto with asmgen.
-  unfold preg_overlap; simpl; tauto.
+  apply preg_no_overlap_R12.
   congruence.
 Qed.
   
@@ -692,13 +721,20 @@ Proof.
   intros. unfold rs1. intuition.
 Qed.
 
+Remark cr_no_overlap: forall r' c, ~ preg_overlap r' (CR c).
+Proof.
+  unfold preg_overlap, sub_preg; simpl.
+  destruct r' as [r''|r''|r''|r''|]; try destruct r''; simpl; try tauto;
+    unfold not; intros; decompose [or] H; try inv H0; try inv H1.
+Qed.
+
 Lemma compare_int_inv:
   forall rs v1 v2 m,
   let rs1 := nextinstr (compare_int rs v1 v2 m) in
   forall r', data_preg r' = true -> rs1#r' = rs#r'.
 Proof.
   intros. unfold rs1, compare_int.
-  assert (forall c, ~ preg_overlap r' (CR c)) by (unfold preg_overlap; simpl; tauto).
+  assert (forall c, ~ preg_overlap r' (CR c)) by apply cr_no_overlap.
   Simpl.
 Qed.
 
@@ -837,7 +873,7 @@ Lemma compare_float_inv:
   forall r', data_preg r' = true -> rs1#r' = rs#r'.
 Proof.
   intros. unfold rs1, compare_float.
-  assert (forall c, ~ preg_overlap r' (CR c)) by (unfold preg_overlap; simpl; tauto).
+  assert (forall c, ~ preg_overlap r' (CR c)) by apply cr_no_overlap.
   assert (nextinstr (rs#CN <- Vundef #CZ <- Vundef #CC <- Vundef #CV <- Vundef) r' = rs r').
   { repeat Simplif. }
   destruct v1; destruct v2; auto.
@@ -944,7 +980,7 @@ Lemma compare_float32_inv:
   forall r', data_preg r' = true -> rs1#r' = rs#r'.
 Proof.
   intros. unfold rs1, compare_float32.
-  assert (forall c, ~ preg_overlap r' (CR c)) by (unfold preg_overlap; simpl; tauto).
+  assert (forall c, ~ preg_overlap r' (CR c)) by apply cr_no_overlap.
   assert (nextinstr (rs#CN <- Vundef #CZ <- Vundef #CC <- Vundef #CV <- Vundef) r' = rs r').
   { repeat Simplif. }
   destruct v1; destruct v2; auto.
@@ -1105,7 +1141,7 @@ Proof.
   destruct (Val.cmp_bool c0 (rs' x) (Vint i)) eqn:CMP; auto.
   split; apply cond_for_signed_cmp_correct; auto. rewrite Val.negate_cmp_bool, CMP; auto.
   intros. rewrite compare_int_inv by auto.
-  rewrite R; auto with asmgen. unfold preg_overlap. simpl; tauto.
+  rewrite R; auto with asmgen. apply preg_no_overlap_R14.
 - (* Ccompuimm *)
   destruct (is_immed_arith i).
   econstructor.
@@ -1122,7 +1158,7 @@ Proof.
   destruct (Val.cmpu_bool (Mem.valid_pointer m) c0 (rs' x) (Vint i)) eqn:CMP; auto.
   split; apply cond_for_unsigned_cmp_correct; auto. rewrite Val.negate_cmpu_bool, CMP; auto.
   intros. rewrite compare_int_inv by auto.
-  rewrite R; auto with asmgen. unfold preg_overlap. simpl; tauto.
+  rewrite R; auto with asmgen. apply preg_no_overlap_R14.
 - (* Ccompf *)
   econstructor.
   split. apply exec_straight_one. simpl. eauto. apply compare_float_nextpc.

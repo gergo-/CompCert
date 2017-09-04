@@ -99,47 +99,79 @@ Module Pregmap := EMap(PregEq).
 
 (** Aliasing relationships on [preg] analogous to [mreg]. *)
 
-Definition sub_pregs (r: preg): list preg :=
+Definition sub_pregs (r: preg): option (preg * preg) :=
   match r with
-  | DR0  => SR SR0  :: SR SR1  :: nil
-  | DR1  => SR SR2  :: SR SR3  :: nil
-  | DR2  => SR SR4  :: SR SR5  :: nil
-  | DR3  => SR SR6  :: SR SR7  :: nil
-  | DR4  => SR SR8  :: SR SR9  :: nil
-  | DR5  => SR SR10 :: SR SR11 :: nil
-  | DR6  => SR SR12 :: SR SR13 :: nil
-  | DR7  => SR SR14 :: SR SR15 :: nil
-  | DR8  => SR SR16 :: SR SR17 :: nil
-  | DR9  => SR SR18 :: SR SR19 :: nil
-  | DR10 => SR SR20 :: SR SR21 :: nil
-  | DR11 => SR SR22 :: SR SR23 :: nil
-  | DR12 => SR SR24 :: SR SR25 :: nil
-  | DR13 => SR SR26 :: SR SR27 :: nil
-  | DR14 => SR SR28 :: SR SR29 :: nil
-  | DR15 => SR SR30 :: SR SR31 :: nil
-  | _ => nil
+  | DR0  => Some (SR SR0,  SR SR1)
+  | DR1  => Some (SR SR2,  SR SR3)
+  | DR2  => Some (SR SR4,  SR SR5)
+  | DR3  => Some (SR SR6,  SR SR7)
+  | DR4  => Some (SR SR8,  SR SR9)
+  | DR5  => Some (SR SR10, SR SR11)
+  | DR6  => Some (SR SR12, SR SR13)
+  | DR7  => Some (SR SR14, SR SR15)
+  | DR8  => Some (SR SR16, SR SR17)
+  | DR9  => Some (SR SR18, SR SR19)
+  | DR10 => Some (SR SR20, SR SR21)
+  | DR11 => Some (SR SR22, SR SR23)
+  | DR12 => Some (SR SR24, SR SR25)
+  | DR13 => Some (SR SR26, SR SR27)
+  | DR14 => Some (SR SR28, SR SR29)
+  | DR15 => Some (SR SR30, SR SR31)
+  | _ => None
   end.
 
-Definition super_pregs (r: preg): list preg :=
-  match r with
-  | SR0  | SR1  => FR DR0  :: nil
-  | SR2  | SR3  => FR DR1  :: nil
-  | SR4  | SR5  => FR DR2  :: nil
-  | SR6  | SR7  => FR DR3  :: nil
-  | SR8  | SR9  => FR DR4  :: nil
-  | SR10 | SR11 => FR DR5  :: nil
-  | SR12 | SR13 => FR DR6  :: nil
-  | SR14 | SR15 => FR DR7  :: nil
-  | SR16 | SR17 => FR DR8  :: nil
-  | SR18 | SR19 => FR DR9  :: nil
-  | SR20 | SR21 => FR DR10 :: nil
-  | SR22 | SR23 => FR DR11 :: nil
-  | SR24 | SR25 => FR DR12 :: nil
-  | SR26 | SR27 => FR DR13 :: nil
-  | SR28 | SR29 => FR DR14 :: nil
-  | SR30 | SR31 => FR DR15 :: nil
-  | _ => nil
+Definition sub_preg (r1 r2: preg): Prop :=
+  match sub_pregs r2 with
+  | Some (lo, hi) => r1 = lo \/ r1 = hi
+  | None => False
   end.
+
+Definition super_pregs (r: preg): option preg :=
+  match r with
+  | SR0  | SR1  => Some (FR DR0)
+  | SR2  | SR3  => Some (FR DR1)
+  | SR4  | SR5  => Some (FR DR2)
+  | SR6  | SR7  => Some (FR DR3)
+  | SR8  | SR9  => Some (FR DR4)
+  | SR10 | SR11 => Some (FR DR5)
+  | SR12 | SR13 => Some (FR DR6)
+  | SR14 | SR15 => Some (FR DR7)
+  | SR16 | SR17 => Some (FR DR8)
+  | SR18 | SR19 => Some (FR DR9)
+  | SR20 | SR21 => Some (FR DR10)
+  | SR22 | SR23 => Some (FR DR11)
+  | SR24 | SR25 => Some (FR DR12)
+  | SR26 | SR27 => Some (FR DR13)
+  | SR28 | SR29 => Some (FR DR14)
+  | SR30 | SR31 => Some (FR DR15)
+  | _ => None
+  end.
+
+Definition super_preg (r1 r2: preg): Prop :=
+  match super_pregs r2 with
+  | Some s => r1 = s
+  | None => False
+  end.
+
+Definition sub_preg_list (p: preg) :=
+  match sub_pregs p with
+  | Some (p1, p2) => p1 :: p2 :: nil
+  | None => nil
+  end.
+
+Definition super_preg_list (p: preg) :=
+  match super_pregs p with
+  | Some p1 => p1 :: nil
+  | None => nil
+  end.
+
+Definition sub_preg_dec (p1 p2: preg): { sub_preg p1 p2 } + { ~ sub_preg p1 p2 }.
+Proof.
+  unfold sub_preg.
+  destruct (sub_pregs p2) as [[a b]|].
+  destruct (preg_eq p1 a); auto. destruct (preg_eq p1 b); tauto.
+  auto.
+Defined.
 
 (** Conventional names for stack pointer ([SP]) and return address ([RA]) *)
 
@@ -366,7 +398,7 @@ Fixpoint undef_regs (l: list preg) (rs: regset) : regset :=
 (* Set register [r] to [v] in regset [rs], taking register aliasing into account
   by first making all of [r]'s aliases undefined. *)
 Definition pregmap_set r v rs :=
-  let rs' := undef_regs (sub_pregs r) (undef_regs (super_pregs r) rs) in
+  let rs' := undef_regs (sub_preg_list r) (undef_regs (super_preg_list r) rs) in
   Pregmap.set r v rs'.
 
 Notation "a # b" := (a b) (at level 1, only parsing) : asm.

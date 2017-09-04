@@ -526,7 +526,7 @@ Qed.
 
 Remark preg_of_no_overlap_R12: forall r, ~ preg_overlap (IR IR12) (preg_of r).
 Proof.
-  intros. apply not_preg_overlap_sym. unfold preg_overlap. simpl. tauto.
+  intros. apply not_preg_overlap_sym, preg_no_overlap_R12.
 Qed.
 
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
@@ -661,7 +661,7 @@ Opaque loadind.
   eapply agree_sp_def; eauto.
   simpl. eapply agree_exten; eauto. intros.
   rewrite !pregmap_gso; auto with asmgen.
-  unfold preg_overlap; simpl; tauto.
+  apply preg_no_overlap_R14.
   apply not_preg_overlap_sym, if_preg_no_overlap_PC. auto with asmgen.
   Simpl. rewrite <- H2. auto.
 + (* Direct call *)
@@ -678,7 +678,7 @@ Opaque loadind.
   eapply agree_sp_def; eauto.
   simpl. eapply agree_exten; eauto. intros.
   rewrite !pregmap_gso; auto with asmgen.
-  unfold preg_overlap; simpl; tauto.
+  apply preg_no_overlap_R14.
   apply not_preg_overlap_sym, if_preg_no_overlap_PC. auto with asmgen.
   Simpl. rewrite <- H2. auto.
 
@@ -712,7 +712,7 @@ Opaque loadind.
     unfold preg_overlap; simpl; tauto. auto.
     split. Simpl. split. Simpl. intros. Simpl.
     unfold pregmap_set. simpl. Simpl.
-    apply R; auto. unfold preg_overlap; simpl; tauto.
+    apply R; auto. apply preg_no_overlap_R14.
   }
   destruct ros as [rf|fid]; simpl in H; monadInv H7.
 + (* Indirect call *)
@@ -833,7 +833,7 @@ Opaque loadind.
   simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0. eexact A.
   econstructor; eauto.
   eapply agree_undef_regs; eauto. intros. rewrite C; auto with asmgen.
-  rewrite pregmap_gso; auto with asmgen. unfold preg_overlap; simpl; tauto.
+  rewrite pregmap_gso; auto with asmgen. apply preg_no_overlap_R14.
   congruence.
 
 - (* Mreturn *)
@@ -868,7 +868,7 @@ Opaque loadind.
     split. Simpl.
     intros. Simpl.
     unfold pregmap_set. simpl. Simpl.
-    apply R; auto. unfold preg_overlap; simpl; tauto.
+    apply R; auto. apply preg_no_overlap_R14.
   }
   destruct (X (Pbreg IR14 (Mach.fn_sig f) :: x)) as [rs2 [P [Q [R S]]]].
   exploit exec_straight_steps_2. eexact P. eauto. eauto. eapply functions_transl; eauto. eauto.
@@ -879,9 +879,12 @@ Opaque loadind.
   eapply find_instr_tail; eauto.
   simpl. reflexivity.
   traceEq.
-  econstructor; eauto.
-  unfold pregmap_set. split. Simpl. eapply parent_sp_def; eauto.
-  intros. Simpl. rewrite S; auto with asmgen. eapply preg_val; eauto.
+  econstructor; eauto. split.
+  rewrite pregmap_gso; eauto with asmgen. apply if_preg_no_overlap_PC'. simpl; auto.
+  eapply parent_sp_def; eauto.
+  intros.
+  rewrite pregmap_gso; eauto with asmgen. rewrite S; auto with asmgen. eapply preg_val; eauto.
+  apply if_preg_no_overlap_PC'. apply data_if_preg, preg_of_data.
 
 - (* internal function *)
   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.

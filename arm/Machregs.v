@@ -268,6 +268,44 @@ Proof.
   destruct r2; simpl in H; try contradiction; subst; simpl; auto.
 Qed.
 
+Lemma subreg_in_list:
+  forall r1 r2, subreg r1 r2 <-> In r1 (subreg_list r2).
+Proof.
+  unfold subreg, subreg_list. split; intros.
+  destruct (subregs r2) as [[a b]|]; simpl; destruct H; auto.
+  destruct (subregs r2) as [[a b]|]; simpl in H; decompose [or] H; auto; tauto.
+Qed.
+
+Lemma subreg_lists:
+  forall r1 r2, subreg r1 r2 -> In r1 (subreg_list r2) /\ superreg_list r2 = nil.
+Proof.
+  unfold subreg, subreg_list. intros. split.
+  destruct (subregs r2) as [[a b]|]; simpl in H.
+  destruct H; subst; simpl; auto. auto.
+  generalize (subregs_or_superregs r2); intros.
+  destruct H0. rewrite H0 in H; tauto.
+  unfold superreg_list. rewrite H0; auto.
+Qed.
+
+Lemma superreg_in_list:
+  forall r1 r2, superreg r1 r2 <-> In r1 (superreg_list r2).
+Proof.
+  unfold superreg, superreg_list. split; intros.
+  destruct (superregs r2) as [a|]; simpl; destruct H; auto.
+  destruct (superregs r2) as [a|]; simpl in H; decompose [or] H; auto; tauto.
+Qed.
+
+Lemma superreg_lists:
+  forall r1 r2, superreg r1 r2 -> In r1 (superreg_list r2) /\ subreg_list r2 = nil.
+Proof.
+  unfold superreg, superreg_list. intros. split.
+  destruct (superregs r2) as [a|]; simpl in H.
+  destruct H; subst; simpl; auto. auto.
+  generalize (subregs_or_superregs r2); intros.
+  destruct H0. unfold subreg_list. rewrite H0; auto.
+  rewrite H0 in H; tauto.
+Qed.
+
 Lemma subreg_asymm:
   forall r1 r2,
   subreg r1 r2 -> subreg r2 r1 -> False.
