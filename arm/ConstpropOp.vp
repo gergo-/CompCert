@@ -226,8 +226,11 @@ Nondetfunction op_strength_reduction
   | Oand, r1 :: r2 :: nil, v1 :: I n2 :: nil => make_andimm n2 r1 v1
   | Oandshift s, r1 :: r2 :: nil, v1 :: I n2 :: nil => make_andimm (eval_static_shift s n2) r1 v1
   | Oor, r1 :: r2 :: nil, I n1 :: v2 :: nil => make_orimm n1 r2
+  | Oor, r1 :: r2 :: nil, Ix n1 :: v2 :: nil => make_orimm n1 r2
   | Oor, r1 :: r2 :: nil, v1 :: I n2 :: nil => make_orimm n2 r1
+  | Oor, r1 :: r2 :: nil, v1 :: Ix n2 :: nil => make_orimm n2 r1
   | Oorshift s, r1 :: r2 :: nil, v1 :: I n2 :: nil => make_orimm (eval_static_shift s n2) r1
+  | Oorshift s, r1 :: r2 :: nil, v1 :: Ix n2 :: nil => make_orimm (eval_static_shift s n2) r1
   | Oxor, r1 :: r2 :: nil, I n1 :: v2 :: nil => make_xorimm n1 r2
   | Oxor, r1 :: r2 :: nil, v1 :: I n2 :: nil => make_xorimm n2 r1
   | Oxorshift s, r1 :: r2 :: nil, v1 :: I n2 :: nil => make_xorimm (eval_static_shift s n2) r1

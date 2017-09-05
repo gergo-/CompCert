@@ -78,6 +78,10 @@ Ltac SimplVM :=
       let E := fresh in
       assert (E: v = Vint n) by (inversion H; auto);
       rewrite E in *; clear H; SimplVM
+  | [ H: vmatch _ ?v (Ix ?n) |- _ ] =>
+      let E := fresh in
+      assert (E: Val.lessdef v (Vint n)) by (inversion H; auto);
+      clear H; SimplVM
   | [ H: vmatch _ ?v (F ?n) |- _ ] =>
       let E := fresh in
       assert (E: v = Vfloat n) by (inversion H; auto);
@@ -121,6 +125,12 @@ Qed.
 
 Lemma eval_static_shift_correct:
   forall s n, eval_shift s (Vint n) = Vint (eval_static_shift s n).
+Proof.
+  intros. destruct s; simpl; rewrite ? s_range; auto.
+Qed.
+
+Lemma eval_static_shift_correct':
+  forall s, eval_shift s Vundef = Vundef.
 Proof.
   intros. destruct s; simpl; rewrite ? s_range; auto.
 Qed.
@@ -355,6 +365,20 @@ Proof.
   econstructor; split; eauto. auto.
 Qed.
 
+Lemma make_orimm_correct':
+  forall n r,
+  let (op, args) := make_orimm n r in
+  exists v, eval_operation ge (Vptr sp Ptrofs.zero) op rs##args m = Some v /\ Val.lessdef (Val.or rs#r Vundef) v.
+Proof.
+  intros; unfold make_orimm.
+  predSpec Int.eq Int.eq_spec n Int.zero; intros.
+  subst n. exists (rs#r); split; auto. destruct (rs#r); simpl; auto.
+  predSpec Int.eq Int.eq_spec n Int.mone; intros.
+  subst n. exists (Vint Int.mone); split; auto. destruct (rs#r); simpl; auto.
+  econstructor; split; eauto. auto.
+  admit.
+Admitted.
+
 Lemma make_xorimm_correct:
   forall n r,
   let (op, args) := make_xorimm n r in
@@ -493,9 +517,15 @@ Proof.
   InvApproxRegs; SimplVM. inv H0. rewrite eval_static_shift_correct. apply make_andimm_correct; auto.
 (* or *)
   InvApproxRegs; SimplVM. inv H0. fold (Val.or (Vint n1) rs#r2). rewrite Val.or_commut. apply make_orimm_correct.
+  InvApproxRegs; SimplVM. inv H2. rewrite H4 in *. inv H0. fold (Val.or (Vint n1) rs#r2). rewrite Val.or_commut. apply make_orimm_correct.
+  InvApproxRegs; SimplVM. inv H0. rewrite <- H3. rewrite Val.or_commut. apply make_orimm_correct'.
   InvApproxRegs; SimplVM. inv H0. apply make_orimm_correct.
+  InvApproxRegs; SimplVM. inv H2. rewrite H4 in *. inv H0. apply make_orimm_correct.
+  InvApproxRegs; SimplVM. inv H0. rewrite <- H3. apply make_orimm_correct'.
 (* orshift *)
   InvApproxRegs; SimplVM. inv H0. rewrite eval_static_shift_correct. apply make_orimm_correct.
+  InvApproxRegs; SimplVM. inv H2. rewrite H4 in *. inv H0. rewrite eval_static_shift_correct. apply make_orimm_correct.
+  InvApproxRegs; SimplVM. inv H0. rewrite <- H3. rewrite eval_static_shift_correct'. apply make_orimm_correct'.
 (* xor *)
   InvApproxRegs; SimplVM. inv H0. fold (Val.xor (Vint n1) rs#r2). rewrite Val.xor_commut. apply make_xorimm_correct.
   InvApproxRegs; SimplVM. inv H0. apply make_xorimm_correct.

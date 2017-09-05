@@ -528,6 +528,7 @@ Qed.
 Inductive aval : Type :=
   | Vbot                     (**r bottom (empty set of values) *)
   | I (n: int)               (**r exactly [Vint n] *)
+  | Ix (n: int)              (**r exactly [Vint n], or [Vundef] *)
   | Uns (p: aptr) (n: Z)     (**r a [n]-bit unsigned integer, or [Vundef] *)
   | Sgn (p: aptr) (n: Z)     (**r a [n]-bit signed integer, or [Vundef] *)
   | L (n: int64)             (**r exactly [Vlong n] *)
@@ -559,6 +560,8 @@ Definition is_sgn (n: Z) (i: int) : Prop :=
 
 Inductive vmatch : val -> aval -> Prop :=
   | vmatch_i: forall i, vmatch (Vint i) (I i)
+  | vmatch_ix: forall i, vmatch (Vint i) (Ix i)
+  | vmatch_ix_undef: forall i, vmatch Vundef (Ix i)
   | vmatch_Uns: forall p i n, 0 <= n -> is_uns n i -> vmatch (Vint i) (Uns p n)
   | vmatch_Uns_undef: forall p n, vmatch Vundef (Uns p n)
   | vmatch_Sgn: forall p i n, 0 < n -> is_sgn n i -> vmatch (Vint i) (Sgn p n)
@@ -815,18 +818,22 @@ Qed.
 Inductive vge: aval -> aval -> Prop :=
   | vge_bot: forall v, vge v Vbot
   | vge_i: forall i, vge (I i) (I i)
+  | vge_ix: forall i, vge (Ix i) (Ix i)
   | vge_l: forall i, vge (L i) (L i)
   | vge_f: forall f, vge (F f) (F f)
   | vge_s: forall f, vge (FS f) (FS f)
   | vge_uns_i: forall p n i, 0 <= n -> is_uns n i -> vge (Uns p n) (I i)
+  | vge_uns_ix: forall p n i, 0 <= n -> is_uns n i -> vge (Uns p n) (Ix i)
   | vge_uns_uns: forall p1 n1 p2 n2, n1 >= n2 -> pge p1 p2 -> vge (Uns p1 n1) (Uns p2 n2)
   | vge_sgn_i: forall p n i, 0 < n -> is_sgn n i -> vge (Sgn p n) (I i)
+  | vge_sgn_ix: forall p n i, 0 < n -> is_sgn n i -> vge (Sgn p n) (Ix i)
   | vge_sgn_sgn: forall p1 n1 p2 n2, n1 >= n2 -> pge p1 p2 -> vge (Sgn p1 n1) (Sgn p2 n2)
   | vge_sgn_uns: forall p1 n1 p2 n2, n1 > n2 -> pge p1 p2 -> vge (Sgn p1 n1) (Uns p2 n2)
   | vge_p_p: forall p q, pge p q -> vge (Ptr p) (Ptr q)
   | vge_ip_p: forall p q, pge p q -> vge (Ifptr p) (Ptr q)
   | vge_ip_ip: forall p q, pge p q -> vge (Ifptr p) (Ifptr q)
   | vge_ip_i: forall p i, vge (Ifptr p) (I i)
+  | vge_ip_ix: forall p i, vge (Ifptr p) (Ix i)
   | vge_ip_l: forall p i, vge (Ifptr p) (L i)
   | vge_ip_f: forall p f, vge (Ifptr p) (F f)
   | vge_ip_s: forall p f, vge (Ifptr p) (FS f)
@@ -1580,11 +1587,22 @@ Proof.
 - inv H; inv H0; try (destruct (eq_block b b0)); eauto using psub_sound, poffset_sound, pmatch_lub_l with va.
 Qed.
 
-Definition mul := binop_int Int.mul.
+Definition mul (v w: aval) :=
+  match v, w with
+  | I i1, I i2 => I (Int.mul i1 i2)
+  | I i, _ | Ix i, _ => if Int.eq i Int.zero then Ix Int.zero else ntop1 w
+  | _, I i | _, Ix i => if Int.eq i Int.zero then Ix Int.zero else ntop1 v
+  | _, _ => ntop2 v w
+  end.
 
 Lemma mul_sound:
   forall v x w y, vmatch v x -> vmatch w y -> vmatch (Val.mul v w) (mul x y).
-Proof (binop_int_sound Int.mul).
+Proof.
+  intros. unfold Val.mul, mul.
+- inv H; inv H0; eauto with va;
+    (predSpec Int.eq Int.eq_spec i Int.zero; subst; constructor) ||
+    (predSpec Int.eq Int.eq_spec i0 Int.zero; subst; try rewrite Int.mul_zero; constructor).
+Qed.
 
 Definition mulhs := binop_int Int.mulhs.
 
@@ -2825,27 +2843,31 @@ Definition vnormalize (chunk: memory_chunk) (v: aval) :=
   match chunk, v with
   | _, Vbot => Vbot
   | Mint8signed, I i => I (Int.sign_ext 8 i)
+  | Mint8signed, Ix i => Ix (Int.sign_ext 8 i)
   | Mint8signed, Uns p n => if zlt n 8 then Uns (provenance v) n else Sgn (provenance v) 8
   | Mint8signed, Sgn p n => Sgn (provenance v) (Z.min n 8)
   | Mint8signed, _ => Sgn (provenance v) 8
   | Mint8unsigned, I i => I (Int.zero_ext 8 i)
+  | Mint8unsigned, Ix i => Ix (Int.zero_ext 8 i)
   | Mint8unsigned, Uns p n => Uns (provenance v) (Z.min n 8)
   | Mint8unsigned, _ => Uns (provenance v) 8
   | Mint16signed, I i => I (Int.sign_ext 16 i)
+  | Mint16signed, Ix i => Ix (Int.sign_ext 16 i)
   | Mint16signed, Uns p n => if zlt n 16 then Uns (provenance v) n else Sgn (provenance v) 16
   | Mint16signed, Sgn p n => Sgn (provenance v) (Z.min n 16)
   | Mint16signed, _ => Sgn (provenance v) 16
   | Mint16unsigned, I i => I (Int.zero_ext 16 i)
+  | Mint16unsigned, Ix i => Ix (Int.zero_ext 16 i)
   | Mint16unsigned, Uns p n => Uns (provenance v) (Z.min n 16)
   | Mint16unsigned, _ => Uns (provenance v) 16
-  | Mint32, (I _ | Uns _ _ | Sgn _ _ | Ifptr _) => v
+  | Mint32, (I _ | Ix _ | Uns _ _ | Sgn _ _ | Ifptr _) => v
   | Mint32, Ptr p => if Archi.ptr64 then Ifptr p else v
   | Mint64, (L _ | Ifptr _) => v
   | Mint64, (Uns p _ | Sgn p _) => Ifptr p
   | Mint64, Ptr p => if Archi.ptr64 then v else Ifptr p
   | Mfloat32, FS f => v
   | Mfloat64, F f => v
-  | Many32, (I _ | Uns _ _ | Sgn _ _ | FS _ | Ifptr _) => v
+  | Many32, (I _ | Ix _ | Uns _ _ | Sgn _ _ | FS _ | Ifptr _) => v
   | Many32, Ptr p => if Archi.ptr64 then Ifptr p else v
   | Many64, _ => v
   | _, _ => Ifptr (provenance v)
@@ -2942,10 +2964,24 @@ Proof with (auto using provenance_monotone with va).
   apply is_sign_ext_sgn...
 - constructor... apply is_zero_ext_uns... apply Z.min_case...
 - unfold provenance; destruct (va_strict tt)...
+- destruct (zlt n 8); constructor...
+  apply is_sign_ext_uns...
+  apply is_sign_ext_sgn...
+- constructor... apply is_zero_ext_uns... apply Z.min_case...
+- destruct (zlt n 16); constructor...
+  apply is_sign_ext_uns...
+  apply is_sign_ext_sgn...
+- constructor... apply is_zero_ext_uns... apply Z.min_case...
+- unfold provenance; destruct (va_strict tt)...
 - destruct (zlt n1 8). rewrite zlt_true by omega...
   destruct (zlt n2 8)...
 - destruct (zlt n1 16). rewrite zlt_true by omega...
   destruct (zlt n2 16)...
+- constructor... apply is_sign_ext_sgn... apply Z.min_case...
+- constructor... apply is_zero_ext_uns...
+- constructor... apply is_sign_ext_sgn... apply Z.min_case...
+- constructor... apply is_zero_ext_uns...
+- unfold provenance; destruct (va_strict tt)...
 - constructor... apply is_sign_ext_sgn... apply Z.min_case...
 - constructor... apply is_zero_ext_uns...
 - constructor... apply is_sign_ext_sgn... apply Z.min_case...
@@ -2959,6 +2995,11 @@ Proof with (auto using provenance_monotone with va).
 - destruct ptr64...
 - destruct ptr64...
 - destruct ptr64...
+- constructor... apply is_sign_ext_sgn...
+- constructor... apply is_zero_ext_uns...
+- constructor... apply is_sign_ext_sgn...
+- constructor... apply is_zero_ext_uns...
+- unfold provenance; destruct (va_strict tt)...
 - constructor... apply is_sign_ext_sgn...
 - constructor... apply is_zero_ext_uns...
 - constructor... apply is_sign_ext_sgn...
