@@ -1265,6 +1265,17 @@ Local Opaque mreg_type.
     admit. (*intuition auto.*)
   exact D.
 (*Qed.*)
+(* FIXME: We should now have all or most of the machinery to fix this. When
+   a single register is to be spilled, spill its containing double register
+   instead. This should restore the double register's value to what it was
+   before. An access to either of its parts should therefore also give the
+   same value as before.
+   To investigate:
+   - encode/decode definitions for pairs
+   - where exactly do we use LTLtyping now to ensure that only good parts of
+     pairs are accessed?
+   - what needs to change in Bounds?
+*)
 Admitted. (* FIXME *)
 
 End RESTORE_CALLEE_SAVE.
