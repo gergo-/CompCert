@@ -156,6 +156,10 @@ Definition modu (e1: expr) (e2: expr) :=
       then modu_base e1 e2
       else Eop (Ointconst (Int.modu n1 n2)) Enil
   | Some n2, _ => moduimm e1 n2
+  | _, Some n1 =>
+      if Int.eq n1 Int.zero
+      then Eop (Ointconst Int.zero) Enil
+      else modu_base e1 e2
   | _, _ => modu_base e1 e2
   end.
 
@@ -216,6 +220,10 @@ Definition mods (e1: expr) (e2: expr) :=
       then mods_base e1 e2
       else Eop (Ointconst (Int.mods n1 n2)) Enil
   | Some n2, _ => modsimm e1 n2
+  | _, Some n1 =>
+      if Int.eq n1 Int.zero
+      then Eop (Ointconst Int.zero) Enil
+      else mods_base e1 e2
   | _, _ => mods_base e1 e2
   end.
 
@@ -262,6 +270,10 @@ Definition modlu (e1 e2: expr) :=
                     | Some(p, m) => Elet e1 (modl_from_divl (divlu_mull p m) n2)
                     end
       end
+  | _, Some n1 =>
+      if Int64.eq n1 Int64.zero
+      then longconst Int64.zero
+      else modlu_base e1 e2
   | _, _ => modlu_base e1 e2
   end.
 
@@ -308,6 +320,10 @@ Definition modls (e1 e2: expr) :=
                     | Some(p, m) => Elet e1 (modl_from_divl (divls_mull p m) n2)
                     end
       end
+  | _, Some n1 =>
+      if Int64.eq n1 Int64.zero
+      then longconst Int64.zero
+      else modls_base e1 e2
   | _, _ => modls_base e1 e2
   end.
 

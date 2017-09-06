@@ -607,7 +607,14 @@ Proof.
   subst. simpl in H1. rewrite Z in H1; inv H1.
   TrivialExists.
 + subst. eapply eval_moduimm; eauto.
-- eapply eval_modu_base; eauto.
+- destruct (is_intconst a) as [n1|] eqn:A.
++ exploit is_intconst_sound; eauto. intros EA; clear A.
+  predSpec Int.eq Int.eq_spec n1 Int.zero; intros. subst.
+  simpl in H1. destruct y; inv H1.
+  destruct (Int.eq i Int.zero). inv H3.
+  TrivialExists.
+  eapply eval_modu_base; eauto.
++ eapply eval_modu_base; eauto.
 Qed.
 
 Lemma eval_divs_mul:
@@ -734,7 +741,14 @@ Proof.
   destruct (Int.eq n2 Int.zero || Int.eq n1 (Int.repr Int.min_signed) && Int.eq n2 Int.mone); inv H1.
   TrivialExists.
 + subst. eapply eval_modsimm; eauto.
-- eapply eval_mods_base; eauto.
+- destruct (is_intconst a) as [n1|] eqn:A.
++ exploit is_intconst_sound; eauto. intros EA; clear A.
+  predSpec Int.eq Int.eq_spec n1 Int.zero; intros. subst.
+  simpl in H1. destruct y; inv H1.
+  destruct (Int.eq i Int.zero || Int.eq Int.zero (Int.repr Int.min_signed) && Int.eq i Int.mone). inv H3.
+  TrivialExists.
+  eapply eval_mods_base; eauto.
++ eapply eval_mods_base; eauto.
 Qed.
 
 Lemma eval_modl_from_divl:
@@ -818,7 +832,14 @@ Proof.
     eapply eval_divlu_mull; eauto.
     red; intros; subst n2; discriminate Z.
 ** eapply eval_modlu_base; eauto.
-- eapply eval_modlu_base; eauto.
+- destruct (is_longconst a) as [n1|] eqn:A.
++ exploit is_longconst_sound; eauto. intros EA; clear A.
+  predSpec Int64.eq Int64.eq_spec n1 Int64.zero; intros. subst.
+  simpl in H1. destruct y; inv H1.
+  destruct (Int64.eq i Int64.zero); inv H3.
+  exploit eval_longconst; eauto.
+  eapply eval_modlu_base; eauto.
++ eapply eval_modlu_base; eauto.
 Qed.
 
 Lemma eval_divls_mull:
@@ -930,7 +951,14 @@ Proof.
    eapply eval_modl_from_divl; auto.
    eapply eval_divls_mull; eauto.
 ** eapply eval_modls_base; eauto.
-- eapply eval_modls_base; eauto.
+- destruct (is_longconst a) as [n1|] eqn:A.
++ exploit is_longconst_sound; eauto. intros EA; clear A.
+  predSpec Int64.eq Int64.eq_spec n1 Int64.zero; intros. subst.
+  simpl in H1. destruct y; inv H1.
+  destruct (Int64.eq i Int64.zero || Int64.eq Int64.zero (Int64.repr Int64.min_signed) && Int64.eq i Int64.mone); inv H3.
+  exploit eval_longconst; eauto.
+  eapply eval_modls_base; eauto.
++ eapply eval_modls_base; eauto.
 Qed.
 
 (** * Floating-point division *)
