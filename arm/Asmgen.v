@@ -179,6 +179,8 @@ Definition loadimm (r: ireg) (n: int) (k: code) :=
     Pmvn r (SOimm (Int.not n)) :: k
   else if thumb tt then
     loadimm_thumb r n k
+  else if Int.lt Int.zero n && Int.lt n (Int.repr 65536) then
+    Pmovw r n :: k
   else if Nat.leb l1 l2 then
     iterate_op (Pmov r) (Porr r r) d1 k
   else

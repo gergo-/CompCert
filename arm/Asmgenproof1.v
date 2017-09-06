@@ -361,6 +361,10 @@ Proof.
   rewrite andb_false_r; simpl. rewrite Int.bits_shru by omega.
   change (Int.unsigned (Int.repr 16)) with 16. rewrite zlt_true by omega. f_equal; omega.
 }
+  destruct (Int.lt Int.zero n && Int.lt n (Int.repr 65536)).
+{ (* single movw *)
+  econstructor; split. apply exec_straight_one. simpl; reflexivity. auto.
+  split; intros; Simpl. }
   destruct (Nat.leb l1 l2).
 { (* mov - orr* *)
   replace (Vint n) with (List.fold_left (fun v i => Val.or v (Vint i)) (decompose_int n) Vzero).

@@ -172,6 +172,7 @@ Proof.
   destruct (Nat.leb l2 1%nat). TailNoLabel.
   destruct (thumb tt). unfold loadimm_thumb.
   destruct (Int.eq (Int.shru n (Int.repr 16)) Int.zero); TailNoLabel.
+  destruct (Int.lt Int.zero n && Int.lt n (Int.repr 65536)). TailNoLabel.
   destruct (Nat.leb l1 l2); auto with labels.
 Qed.
 Hint Resolve loadimm_label: labels.
