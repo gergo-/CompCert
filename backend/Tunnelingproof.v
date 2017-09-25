@@ -201,7 +201,7 @@ Definition tunneled_code (f: function) :=
   PTree.map1 (tunneled_block f) (fn_code f).
 
 Definition locmap_lessdef (ls1 ls2: locset) : Prop :=
-  forall l, Val.lessdef (ls1 l) (ls2 l).
+  forall l, Val.lessdef (ls1 @ l) (ls2 @ l).
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
@@ -261,18 +261,20 @@ Lemma locmap_set_lessdef:
   forall ls1 ls2 v1 v2 l,
   locmap_lessdef ls1 ls2 -> Val.lessdef v1 v2 -> locmap_lessdef (Locmap.set l v1 ls1) (Locmap.set l v2 ls2).
 Proof.
-  intros; red; intros l'. unfold Locmap.set. destruct (Loc.eq l l').
+  intros; red; intros l'. unfold Locmap.set, Locmap.get. destruct (Loc.eq l l').
 - destruct l; auto using Val.load_result_lessdef.
 - destruct (Loc.diff_dec l l'); auto.
+  fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
 Qed.
 
 Lemma locmap_set_undef_lessdef:
   forall ls1 ls2 l,
   locmap_lessdef ls1 ls2 -> locmap_lessdef (Locmap.set l Vundef ls1) ls2.
 Proof.
-  intros; red; intros l'. unfold Locmap.set. destruct (Loc.eq l l').
+  intros; red; intros l'. unfold Locmap.set, Locmap.get. destruct (Loc.eq l l').
 - subst. destruct (Loc.type l'); auto.
 - destruct (Loc.diff_dec l l'); auto.
+  fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
 Qed.
 
 Lemma locmap_undef_regs_lessdef:
@@ -341,7 +343,7 @@ Lemma find_function_translated:
   find_function tge ros tls = Some (tunnel_fundef fd).
 Proof.
   intros. destruct ros; simpl in *.
-- assert (E: tls (R m) = ls (R m)).
+- assert (E: tls @ (R m) = ls @ (R m)).
   { exploit Genv.find_funct_inv; eauto. intros (b & EQ). 
     generalize (H (R m)). rewrite EQ. intros LD; inv LD. auto. }
   rewrite E. apply functions_translated; auto.
@@ -352,7 +354,8 @@ Qed.
 Lemma call_regs_lessdef:
   forall ls1 ls2, locmap_lessdef ls1 ls2 -> locmap_lessdef (call_regs ls1) (call_regs ls2).
 Proof.
-  intros; red; intros. destruct l as [r | [] ofs ty]; simpl; auto.
+  intros; red; intros. unfold locmap_lessdef, Locmap.get in *.
+  destruct l as [r | [] ofs ty]; simpl; auto.
 Qed.
 
 Lemma return_regs_lessdef:
@@ -361,7 +364,7 @@ Lemma return_regs_lessdef:
   locmap_lessdef callee1 callee2 ->
   locmap_lessdef (return_regs caller1 callee1) (return_regs caller2 callee2).
 Proof.
-  intros; red; intros. destruct l; simpl.
+  intros; red; intros. unfold locmap_lessdef, Locmap.get in *. destruct l; simpl.
 - destruct (Conventions1.is_callee_save r); auto.
 - auto.
 Qed. 
@@ -465,7 +468,11 @@ Proof.
   apply sig_preserved.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
-  exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).
+  exploit eval_builtin_args_lessdef.
+  assert (LS': forall l: loc, Val.lessdef (Locmap.read rs l) (Locmap.read tls l)).
+  { unfold Locmap.read; exact LS. }
+  eexact LS'.
+  eauto. eauto. intros (tvargs & EVA & LDA).
   exploit external_call_mem_extends; eauto. intros (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_Lbuiltin; eauto.
@@ -493,7 +500,7 @@ Proof.
   destruct b; econstructor; eauto using locmap_undef_regs_lessdef.
 
 - (* Ljumptable *)
-  assert (tls (R arg) = Vint n).
+  assert (tls @ (R arg) = Vint n).
   { generalize (LS (R arg)); rewrite H; intros LD; inv LD; auto. }
   left; simpl; econstructor; split.
   eapply exec_Ljumptable.

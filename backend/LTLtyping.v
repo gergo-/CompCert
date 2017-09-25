@@ -109,17 +109,17 @@ Qed.
 (** Typing the run-time state. *)
 
 Definition wt_locset (ls: locset) : Prop :=
-  forall l, Val.has_type (ls l) (Loc.type l).
+  forall l, Val.has_type (ls @ l) (Loc.type l).
 
 Lemma wt_setreg:
   forall ls r v,
   Val.has_type v (mreg_type r) -> wt_locset ls -> wt_locset (Locmap.set (R r) v ls).
 Proof.
   intros; red; intros.
-  unfold Locmap.set.
+  unfold Locmap.set, Locmap.get.
   destruct (Loc.eq (R r) l).
   subst l. rewrite Val.load_result_same; auto.
-  destruct (Loc.diff_dec (R r) l). auto. red. auto.
+  destruct (Loc.diff_dec (R r) l). fold (ls @ l). auto. red. auto.
 Qed.
 
 Lemma wt_setstack:
@@ -127,13 +127,13 @@ Lemma wt_setstack:
   wt_locset ls -> wt_locset (Locmap.set (S sl ofs ty) v ls).
 Proof.
   intros; red; intros.
-  unfold Locmap.set.
+  unfold Locmap.set, Locmap.get.
   destruct (Loc.eq (S sl ofs ty) l).
   subst l. simpl.
   generalize (Val.load_result_type (chunk_of_type ty) v).
   replace (type_of_chunk (chunk_of_type ty)) with ty. auto.
   destruct ty; reflexivity.
-  destruct (Loc.diff_dec (S sl ofs ty) l). auto. red. auto.
+  destruct (Loc.diff_dec (S sl ofs ty) l). fold (ls @ l). auto. red. auto.
 Qed.
 
 Lemma wt_undef_regs:
@@ -145,9 +145,10 @@ Qed.
 Lemma wt_call_regs:
   forall ls, wt_locset ls -> wt_locset (call_regs ls).
 Proof.
-  intros; red; intros. unfold call_regs. destruct l. auto.
+  intros; red; intros. unfold call_regs, Locmap.get.
+  destruct l. fold (ls @ (R r)). auto.
   destruct sl.
-  red; auto.
+  red; auto. fold (ls @ (S Outgoing pos ty)).
   change (Loc.type (S Incoming pos ty)) with (Loc.type (S Outgoing pos ty)). auto.
   red; auto.
 Qed.
@@ -157,13 +158,14 @@ Lemma wt_return_regs:
   wt_locset caller -> wt_locset callee -> wt_locset (return_regs caller callee).
 Proof.
   intros; red; intros.
-  unfold return_regs. destruct l; auto. destruct (is_callee_save r); auto.
+  unfold return_regs, wt_locset, Locmap.get in *.
+  destruct l; auto. destruct (is_callee_save r); auto.
 Qed.
 
 Lemma wt_init:
   wt_locset (Locmap.init Vundef).
 Proof.
-  red; intros. unfold Locmap.init. red; auto.
+  red; intros. unfold Locmap.init, Locmap.get. red; auto.
 Qed.
 
 Lemma wt_setpair:
@@ -399,7 +401,7 @@ Qed.
 Lemma wt_callstate_wt_regs:
   forall s f rs m,
   wt_state (Callstate s f rs m) ->
-  forall r, Val.has_type (rs (R r)) (mreg_type r).
+  forall r, Val.has_type (rs @ (R r)) (mreg_type r).
 Proof.
   intros. inv H. apply WTLS.
 Qed.
