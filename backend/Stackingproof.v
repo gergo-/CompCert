@@ -962,6 +962,7 @@ Hypothesis wt_ls: forall r, Val.has_type (ls @ (R r)) (mreg_type r).
 Lemma save_callee_save_rec_correct:
   forall k l pos rs m P,
   (forall r, In r l -> is_callee_save r = true) ->
+  (forall r, In r l -> r = (containing_reg r)) ->
   m |= range sp pos (size_callee_save_area_rec l pos) ** P ->
   agree_regs j ls rs ->
   exists rs', exists m',
@@ -973,7 +974,7 @@ Lemma save_callee_save_rec_correct:
   /\ agree_regs j ls rs'.
 Proof.
 Local Opaque mreg_type.
-  induction l as [ | r l]; simpl; intros until P; intros CS SEP AG.
+  induction l as [ | r l]; simpl; intros until P; intros CONT CS SEP AG.
 - exists rs, m.
   split. apply star_refl.
   split. rewrite sep_pure; split; auto. eapply sep_drop; eauto.
@@ -1070,6 +1071,7 @@ Proof.
 - intros. unfold ls1. apply LTL_undef_regs_same. eapply destroyed_by_setstack_function_entry; eauto.
 - intros. unfold ls1. apply undef_regs_type. apply TY.
 - exact b.(used_callee_save_prop).
+- exact b.(used_callee_save_containing_reg).
 - eexact SEP.
 - instantiate (1 := rs1). apply agree_regs_undef_regs. apply agree_regs_call_regs. auto.
 - clear SEP. intros (rs' & m' & EXEC & SEP & PERMS & AG').
@@ -1225,12 +1227,13 @@ Lemma restore_callee_save_rec_correct:
   m |= contains_callee_saves j sp ofs l ls0 ->
   agree_unused ls0 rs ->
   (forall r, In r l -> mreg_within_bounds b r) ->
+  (forall r, In r l -> r = (containing_reg r)) ->
   exists rs',
     star step tge
       (State cs fb (Vptr sp Ptrofs.zero) (restore_callee_save_rec l ofs k) rs m)
    E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m)
-  /\ (forall r, In r l -> Val.inject j (ls0 @ (R r)) (rs' r))
-  /\ (forall r, ~(In r l) -> rs' r = rs r)
+  /\ (forall r, In (containing_reg r) l -> Val.inject j (ls0 @ (R r)) (rs' r))
+  /\ (forall r, ~(In (containing_reg r) l) -> rs' r = rs r)
   /\ agree_unused ls0 rs'.
 Proof.
 Local Opaque mreg_type.
@@ -1244,38 +1247,37 @@ Local Opaque mreg_type.
   assert (SZPOS: sz > 0) by (apply AST.typesize_pos).
   assert (OFSLE: ofs <= ofs1) by (apply align_le; auto).
   assert (BOUND: mreg_within_bounds b r) by eauto.
+  assert (CONT: r = containing_reg r) by eauto.
   exploit contains_get_stack.
     eapply sep_proj1; eassumption.
   intros (v & LOAD & SPEC).
   exploit (IHl (ofs1 + sz) (rs#r <- v)).
     eapply sep_proj2; eassumption.
     red; intros. rewrite regmap_gso. auto. apply mreg_within_bounds_diff with f; auto.
-    eauto.
+    eauto. eauto.
   intros (rs' & A & B & C & D).
   exists rs'.
   split. eapply star_step; eauto.
     econstructor. exact LOAD. traceEq.
   split. intros.
-    destruct (In_dec mreg_eq r0 l). auto.
-    assert (r = r0) by tauto. subst r0.
+    destruct (In_dec mreg_eq (containing_reg r0) l). auto.
+    assert (r = containing_reg r0) by tauto.
+    generalize (containing_reg_charact r0); intros [EQ | SUB].
+    assert (r = r0) by congruence. subst r0.
     rewrite C by auto. rewrite regmap_gss. exact SPEC.
+    rewrite C by auto. unfold Regmap.get, regmap_set.
+    rewrite Regmap.gso.
+    admit.
+    (* FIXME: must change the undefinition of regs in Regmap. Only undef subregs
+    if the value being stored is not a pair. *)
+    rewrite <- H4 in SUB. apply subreg_not_eq; auto.
+
   split. intros. 
     rewrite C by tauto. apply regmap_gso.
-    apply Decidable.not_or in H2. inv H2.
-    admit. (*intuition auto.*)
+    apply Decidable.not_or in H3. inv H3.
+    rewrite CONT in H4.
+    apply containing_reg_diff. auto.
   exact D.
-(*Qed.*)
-(* FIXME: We should now have all or most of the machinery to fix this. When
-   a single register is to be spilled, spill its containing double register
-   instead. This should restore the double register's value to what it was
-   before. An access to either of its parts should therefore also give the
-   same value as before.
-   To investigate:
-   - encode/decode definitions for pairs
-   - where exactly do we use LTLtyping now to ensure that only good parts of
-     pairs are accessed?
-   - what needs to change in Bounds?
-*)
 Admitted. (* FIXME *)
 
 End RESTORE_CALLEE_SAVE.
@@ -1296,16 +1298,24 @@ Proof.
   intros.
   unfold frame_contents, frame_contents_1 in H.
   apply mconj_proj1 in H. rewrite ! sep_assoc in H. apply sep_pick5 in H.
+
   exploit restore_callee_save_rec_correct; eauto.
   intros; unfold mreg_within_bounds; auto.
+  intros; generalize (used_callee_save_containing_reg b r H1); intros; congruence.
+  intros; generalize (used_callee_save_containing_reg b r H1); intros; congruence.
+
   intros (rs' & A & B & C & D).
   exists rs'.
   split. eexact A.
   split; intros.
-  destruct (In_dec mreg_eq r (used_callee_save b)).
+
+  destruct (In_dec mreg_eq (containing_reg r) (used_callee_save b)).
   apply B; auto.
   rewrite C by auto. apply H0. unfold mreg_within_bounds; tauto.
-  apply C. red; intros. apply (used_callee_save_prop b) in H2. congruence.
+  apply C. red; intros. apply (used_callee_save_prop b) in H2.
+  destruct (containing_reg_charact r) as [EQ | SUB].
+  rewrite <- EQ in H2; congruence.
+  generalize (subreg_callee_save r (containing_reg r) SUB); intros; congruence.
 Qed.
 
 (** As a corollary, we obtain the following correctness result for

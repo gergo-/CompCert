@@ -128,13 +128,6 @@ Proof.
   destruct H; auto using subreg_callee_save, eq_sym.
 Qed.
 
-Lemma same_family_callee_save:
-  forall r1 r2,
-  mreg_family r1 = mreg_family r2 -> is_callee_save r1 = is_callee_save r2.
-Proof.
-  intros. destruct r1; destruct r2; simpl in *; congruence.
-Qed.
-
 (** * Function calling conventions *)
 
 (** The functions in this section determine the locations (machine registers

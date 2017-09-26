@@ -203,6 +203,19 @@ Definition containing_reg (r: mreg): mreg :=
   | PFull s | PHigh s | PLow s => s
   end.
 
+Lemma containing_reg_charact:
+  forall r, r = containing_reg r \/ subreg r (containing_reg r).
+Proof.
+  intros. destruct r; simpl; auto; unfold subreg, containing_reg; simpl; auto.
+Qed.
+
+Lemma subreg_of_containing_reg:
+  forall r s, subreg r s -> s = containing_reg r.
+Proof.
+  intros. unfold subreg, containing_reg in *.
+  destruct s; simpl in H; try tauto; destruct H; subst r; simpl; auto.
+Qed.
+
 Lemma high_is_subreg: forall r s, mreg_part r = PHigh s -> subreg r s.
 Proof.
   intros. unfold subreg. destruct r; inversion H; simpl; auto.
@@ -405,82 +418,26 @@ Proof.
   intros. unfold not, mreg_diff, overlap. tauto.
 Qed.
 
-(** We group registers into pairwise disjoint "families" (for lack of a better
-  term) that are closed under aliasing. That is, a register's family contains
-  all of its aliases, but also its "siblings". For example, [S0]'s family
-  contains [S1], with which it shares the common superregister [D0]. *)
-
-Definition mreg_family (r: mreg): list mreg :=
-  match r with
-  | S0  | S1  | D0  =>  S0 ::  S1 ::  D0 :: nil
-  | S2  | S3  | D1  =>  S2 ::  S3 ::  D1 :: nil
-  | S4  | S5  | D2  =>  S4 ::  S5 ::  D2 :: nil
-  | S6  | S7  | D3  =>  S6 ::  S7 ::  D3 :: nil
-  | S8  | S9  | D4  =>  S8 ::  S9 ::  D4 :: nil
-  | S10 | S11 | D5  => S10 :: S11 ::  D5 :: nil
-  | S12 | S13 | D6  => S12 :: S13 ::  D6 :: nil
-  | S14 | S15 | D7  => S14 :: S15 ::  D7 :: nil
-  | S16 | S17 | D8  => S16 :: S17 ::  D8 :: nil
-  | S18 | S19 | D9  => S18 :: S19 ::  D9 :: nil
-  | S20 | S21 | D10 => S20 :: S21 :: D10 :: nil
-  | S22 | S23 | D11 => S22 :: S23 :: D11 :: nil
-  | S24 | S25 | D12 => S24 :: S25 :: D12 :: nil
-  | S26 | S27 | D13 => S26 :: S27 :: D13 :: nil
-  | S28 | S29 | D14 => S28 :: S29 :: D14 :: nil
-  | S30 | S31 | D15 => S30 :: S31 :: D15 :: nil
-  | r => r :: nil
-  end.
-
-Lemma subreg_same_family:
-  forall r1 r2, subreg r1 r2 -> mreg_family r1 = mreg_family r2.
+Lemma containing_reg_idempotent:
+  forall r, containing_reg (containing_reg r) = containing_reg r.
 Proof.
-  intros.
-  destruct r2; compute in H; try contradiction;
-    decompose [or] H; try contradiction; subst; auto.
+  destruct r; simpl; auto.
 Qed.
 
-Lemma overlap_same_family:
-  forall r1 r2, overlap r1 r2 -> mreg_family r1 = mreg_family r2.
+Lemma overlap_containing_reg:
+  forall r s, overlap r s -> containing_reg r = containing_reg s.
 Proof.
-  intros. destruct H; auto using eq_sym, subreg_same_family.
+  intros. unfold overlap in H. destruct H as [SUB | SUB].
+  apply subreg_of_containing_reg in SUB. rewrite SUB, containing_reg_idempotent; auto.
+  apply subreg_of_containing_reg in SUB. rewrite SUB, containing_reg_idempotent; auto.
 Qed.
 
-Lemma not_same_family_diff:
-  forall r1 r2, mreg_family r1 <> mreg_family r2 -> mreg_diff r1 r2.
+Lemma containing_reg_diff:
+  forall r1 r2, containing_reg r1 <> containing_reg r2 -> mreg_diff r1 r2.
 Proof.
-  intros. unfold mreg_diff; split. congruence.
-  contradict H. auto using overlap_same_family.
-Qed.
-
-Lemma reg_in_family:
-  forall r, In r (mreg_family r).
-Proof.
-  intros. destruct r; compute; tauto.
-Qed.
-
-Lemma subregs_in_family:
-  forall r1 r2, subreg r1 r2 -> In r1 (mreg_family r2).
-Proof.
-  intros.
-  destruct r2; compute in H; try contradiction;
-    decompose [or] H; try contradiction; subst; compute; tauto.
-Qed.
-
-Lemma superregs_in_family:
-  forall r1 r2, superreg r1 r2 -> In r1 (mreg_family r2).
-Proof.
-  intros.
-  destruct r2; compute in H; try contradiction;
-    decompose [or] H; try contradiction; subst; compute; tauto.
-Qed.
-
-Lemma partitioned_families:
-  forall r1 r2,
-  In r1 (mreg_family r2) <-> mreg_family r1 = mreg_family r2.
-Proof.
-  intros. split.
-  - intros. destruct r2; compute in H; try contradiction; decompose [or] H; try contradiction; subst; auto.
-  - intros. destruct r1; destruct r2; simpl in *; try congruence; auto.
+  intros. unfold mreg_diff; split.
+  - congruence.
+  - contradict H. apply overlap_containing_reg; auto.
 Qed.
 
 End REG_ALIASING.
