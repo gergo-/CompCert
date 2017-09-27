@@ -261,20 +261,22 @@ Lemma locmap_set_lessdef:
   forall ls1 ls2 v1 v2 l,
   locmap_lessdef ls1 ls2 -> Val.lessdef v1 v2 -> locmap_lessdef (Locmap.set l v1 ls1) (Locmap.set l v2 ls2).
 Proof.
-  intros; red; intros l'. unfold Locmap.set, Locmap.get. destruct (Loc.eq l l').
-- destruct l; auto using Val.load_result_lessdef.
-- destruct (Loc.diff_dec l l'); auto.
-  fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
+  intros; red; intros l'. unfold Locmap.set, Locmap.get.
+  destruct (Loc.diff_dec l l'); auto.
+- fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
+- destruct (Loc.eq l l').
+  destruct l; auto using Val.load_result_lessdef. auto.
 Qed.
 
 Lemma locmap_set_undef_lessdef:
   forall ls1 ls2 l,
   locmap_lessdef ls1 ls2 -> locmap_lessdef (Locmap.set l Vundef ls1) ls2.
 Proof.
-  intros; red; intros l'. unfold Locmap.set, Locmap.get. destruct (Loc.eq l l').
-- subst. destruct (Loc.type l'); auto.
-- destruct (Loc.diff_dec l l'); auto.
-  fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
+  intros; red; intros l'. unfold Locmap.set, Locmap.get.
+  destruct (Loc.diff_dec l l'); auto.
+- fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
+- destruct (Loc.eq l l').
+  subst. destruct (Loc.type l'); auto. auto.
 Qed.
 
 Lemma locmap_undef_regs_lessdef:

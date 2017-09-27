@@ -117,9 +117,9 @@ Lemma wt_setreg:
 Proof.
   intros; red; intros.
   unfold Locmap.set, Locmap.get.
+  destruct (Loc.diff_dec (R r) l). fold (ls @ l). auto.
   destruct (Loc.eq (R r) l).
-  subst l. rewrite Val.load_result_same; auto.
-  destruct (Loc.diff_dec (R r) l). fold (ls @ l). auto. red. auto.
+  subst l. rewrite Val.load_result_same; auto. red. auto.
 Qed.
 
 Lemma wt_setstack:
@@ -128,12 +128,12 @@ Lemma wt_setstack:
 Proof.
   intros; red; intros.
   unfold Locmap.set, Locmap.get.
+  destruct (Loc.diff_dec (S sl ofs ty) l). fold (ls @ l). auto.
   destruct (Loc.eq (S sl ofs ty) l).
   subst l. simpl.
   generalize (Val.load_result_type (chunk_of_type ty) v).
   replace (type_of_chunk (chunk_of_type ty)) with ty. auto.
-  destruct ty; reflexivity.
-  destruct (Loc.diff_dec (S sl ofs ty) l). fold (ls @ l). auto. red. auto.
+  destruct ty; reflexivity. red. auto.
 Qed.
 
 Lemma wt_undef_regs:

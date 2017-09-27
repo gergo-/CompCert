@@ -337,22 +337,23 @@ Module Locmap.
       are normalized according to the type of the slot. *)
 
   Definition set (l: loc) (v: val) (m: t) : t :=
-    fun (p: loc) =>
-      if Loc.eq l p then
+    fun (l': loc) =>
+      if Loc.diff_dec l l' then
+        m l'
+      else if Loc.eq l l' then
         EOne (Val.load_result (chunk_of_type (Loc.type l)) v)
-      else if Loc.diff_dec l p then
-        m p
       else EOne Vundef.
 
   Lemma gss: forall l v m,
     get l (set l v m) = Val.load_result (chunk_of_type (Loc.type l)) v.
   Proof.
-    intros. unfold get, set. rewrite dec_eq_true; auto.
+    intros. unfold get, set.
+    rewrite pred_dec_false, dec_eq_true; auto using Loc.same_not_diff.
   Qed.
 
   Lemma gss_reg: forall r v m, Val.has_type v (mreg_type r) -> get (R r) (set (R r) v m) = v.
   Proof.
-    intros. unfold get, set. rewrite dec_eq_true, Val.load_result_same; auto.
+    intros. rewrite gss. apply Val.load_result_same; auto.
   Qed.
 
   Lemma gss_typed: forall l v m, Val.has_type v (Loc.type l) -> get l (set l v m) = v.
@@ -362,11 +363,8 @@ Module Locmap.
 
   Lemma gso: forall l v m p, Loc.diff l p -> get p (set l v m) = get p m.
   Proof.
-    intros. unfold get, set. destruct (Loc.eq l p).
-    subst p. elim (Loc.same_not_diff _ H).
-    destruct (Loc.diff_dec l p).
-    auto.
-    contradiction.
+    intros. unfold get, set.
+    rewrite pred_dec_true; auto.
   Qed.
 
   Fixpoint undef (ll: list loc) (m: t) {struct ll} : t :=
@@ -385,9 +383,10 @@ Module Locmap.
   Proof.
     assert (P: forall ll l m, get l m = Vundef -> get l (undef ll m) = Vundef).
     { induction ll; simpl; intros. auto. apply IHll.
-      unfold get, set. destruct (Loc.eq a l).
-      apply Val.load_result_same; auto. simpl; auto.
-      destruct (Loc.diff_dec a l); auto. }
+      unfold get, set.
+      destruct (Loc.diff_dec a l); auto.
+      destruct (Loc.eq a l); auto.
+      apply Val.load_result_same; simpl; auto. }
     induction ll; simpl; intros. contradiction.
     destruct H. apply P. subst a. apply gss_typed. exact I.
     auto.

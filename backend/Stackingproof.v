@@ -255,16 +255,16 @@ Proof.
   unfold Ptrofs.max_unsigned. generalize (typesize_pos ty). omega.
 - simpl. intuition auto.
 + unfold Locmap.set, Locmap.get.
-  destruct (Loc.eq (S sl ofs ty) (S sl ofs0 ty0)); [|destruct (Loc.diff_dec (S sl ofs ty) (S sl ofs0 ty0))].
+  destruct (Loc.diff_dec (S sl ofs ty) (S sl ofs0 ty0)); [|destruct (Loc.eq (S sl ofs ty) (S sl ofs0 ty0))].
+* (* different locations *)
+  exploit H; eauto. intros (v0 & X & Y). exists v0; split; auto.
+  rewrite <- X; eapply Mem.load_store_other; eauto.
+  destruct d. congruence. right. rewrite ! size_type_chunk, ! typesize_typesize. omega.
 * (* same location *)
   inv e. rename ofs0 into ofs. rename ty0 into ty.
   exists (Val.load_result (chunk_of_type ty) v'); split.
   eapply Mem.load_store_similar_2; eauto. omega.
   apply Val.load_result_inject; auto.
-* (* different locations *)
-  exploit H; eauto. intros (v0 & X & Y). exists v0; split; auto.
-  rewrite <- X; eapply Mem.load_store_other; eauto.
-  destruct d. congruence. right. rewrite ! size_type_chunk, ! typesize_typesize. omega.
 * (* overlapping locations *)
   destruct (Mem.valid_access_load m' (chunk_of_type ty0) sp (pos + 4 * ofs0)) as [v'' LOAD].
   apply Mem.valid_access_implies with Writable; auto with mem.
@@ -1019,10 +1019,13 @@ Remark LTL_undef_regs_same:
   forall r rl ls, In r rl -> (LTL.undef_regs rl ls) @ (R r) = Vundef.
 Proof.
   induction rl; simpl; intros. contradiction.
-  unfold Locmap.set, Locmap.get. destruct (Loc.eq (R a) (R r)).
+  unfold Locmap.set, Locmap.get.
+  destruct (Loc.diff_dec (R a) (R r)). fold (LTL.undef_regs rl ls) @ (R r).
+  rewrite IHrl. auto.
+  assert (a <> r) by (apply Loc.diff_not_eq in d; congruence).
+  intuition.
+  destruct (Loc.eq (R a) (R r)); auto.
   rewrite Val.load_result_same; simpl; auto.
-  destruct (Loc.diff_dec (R a) (R r)); auto.
-  apply IHrl. intuition congruence.
 Qed.
 
 Remark LTL_undef_regs_others:
@@ -1045,9 +1048,10 @@ Remark undef_regs_type:
 Proof.
   induction rl; simpl; intros.
 - auto.
-- unfold Locmap.set, Locmap.get. destruct (Loc.eq (R a) l).
+- unfold Locmap.set, Locmap.get.
+  destruct (Loc.diff_dec (R a) l); fold ((LTL.undef_regs rl ls) @ l); auto.
+  destruct (Loc.eq (R a) l); simpl; auto.
   rewrite Val.load_result_same; simpl; auto.
-  destruct (Loc.diff_dec (R a) l); fold ((LTL.undef_regs rl ls) @ l); auto. red; auto.
 Qed.
 
 Lemma save_callee_save_correct:
