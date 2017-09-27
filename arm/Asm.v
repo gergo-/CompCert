@@ -425,8 +425,7 @@ Definition set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
   match res with
   | BR r => rs#r <- v
   | BR_none => rs
-  | BR_splitlong hi lo =>
-      Pregmap.set lo (Val.loword v) (Pregmap.set hi (Val.hiword v) rs)
+  | BR_splitlong hi lo => rs#hi <- (Val.hiword v) #lo <- (Val.loword v)
   end.
 
 Section RELSEM.

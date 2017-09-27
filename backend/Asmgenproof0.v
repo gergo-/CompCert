@@ -361,21 +361,25 @@ Qed.
 
 (** * Agreement between Mach registers and processor registers *)
 
+Notation "rs $ r" := (regmap_get r rs) (at level 1).
+Notation "rs $$ regs" := (List.map (fun r => regmap_get r rs) regs) (at level 1).
+Notation "rs $ r <- v" := (regmap_set r v rs) (at level 1, r at next level).
+
 Record agree (ms: Mach.regset) (sp: val) (rs: Asm.regset) : Prop := mkagree {
   agree_sp: rs#SP = sp;
   agree_sp_def: sp <> Vundef;
-  agree_mregs: forall r: mreg, Val.lessdef (ms r) (rs#(preg_of r))
+  agree_mregs: forall r: mreg, Val.lessdef (ms$r) (rs#(preg_of r))
 }.
 
 Lemma preg_val:
-  forall ms sp rs r, agree ms sp rs -> Val.lessdef (ms r) rs#(preg_of r).
+  forall ms sp rs r, agree ms sp rs -> Val.lessdef (ms$r) rs#(preg_of r).
 Proof.
   intros. destruct H. auto.
 Qed.
 
 Lemma preg_vals:
   forall ms sp rs, agree ms sp rs ->
-  forall l, Val.lessdef_list (map ms l) (map rs (map preg_of l)).
+  forall l, Val.lessdef_list (ms $$ l) (map rs (map preg_of l)).
 Proof.
   induction l; simpl. constructor. constructor. eapply preg_val; eauto. auto.
 Qed.
@@ -390,7 +394,7 @@ Lemma ireg_val:
   forall ms sp rs r r',
   agree ms sp rs ->
   ireg_of r = OK r' ->
-  Val.lessdef (ms r) rs#r'.
+  Val.lessdef (ms$r) rs#r'.
 Proof.
   intros. rewrite <- (ireg_of_eq _ _ H0). eapply preg_val; eauto.
 Qed.
@@ -399,7 +403,7 @@ Lemma freg_val:
   forall ms sp rs r r',
   agree ms sp rs ->
   freg_of r = OK r' ->
-  Val.lessdef (ms r) (rs#r').
+  Val.lessdef (ms$r) (rs#r').
 Proof.
   intros. rewrite <- (freg_of_eq _ _ H0). eapply preg_val; eauto.
 Qed.
@@ -422,12 +426,12 @@ Lemma agree_set_mreg:
   agree ms sp rs ->
   Val.lessdef v (rs'#(preg_of r)) ->
   (forall r', data_preg r' = true -> r' <> preg_of r -> rs'#r' = rs#r') ->
-  agree (Regmap.set r v ms) sp rs'.
+  agree (Regmap.set r (ROne v) ms) sp rs'.
 Proof.
   intros. destruct H. split; auto.
   rewrite H1; auto. apply sym_not_equal. apply preg_of_not_SP.
-  intros. unfold Regmap.set. destruct (RegEq.eq r0 r). congruence.
-  rewrite H1. auto. apply preg_of_data.
+  intros. unfold Regmap.set, regmap_get. destruct (RegEq.eq r0 r). congruence.
+  rewrite H1. fold (ms$r0). auto. apply preg_of_data.
   red; intros; elim n. eapply preg_of_injective; eauto.
 Qed.
 
@@ -435,7 +439,7 @@ Corollary agree_set_mreg_parallel:
   forall ms sp rs r v v',
   agree ms sp rs ->
   Val.lessdef v v' ->
-  agree (Regmap.set r v ms) sp (Pregmap.set (preg_of r) v' rs).
+  agree (Regmap.set r (ROne v) ms) sp (Pregmap.set (preg_of r) v' rs).
 Proof.
   intros. eapply agree_set_mreg; eauto. rewrite Pregmap.gss; auto. intros; apply Pregmap.gso; auto.
 Qed.
@@ -449,8 +453,9 @@ Lemma agree_set_mreg_with_aliases:
 Proof.
   intros. destruct H. split; auto.
   rewrite H1; auto. apply sym_not_equal, preg_of_not_SP. apply preg_of_not_overlap_SP.
-  intros. unfold regmap_set, Regmap.set. destruct (RegEq.eq r0 r). congruence.
+  intros. unfold regmap_set, Regmap.set, regmap_get. destruct (RegEq.eq r0 r). congruence.
 
+  fold ((Mach.undef_regs (subreg_list r) (Mach.undef_regs (superreg_list r) ms))$r0).
   destruct (overlap_dec r0 r).
   - unfold overlap in o. destruct o.
     + rewrite Mach.undef_regs_same; simpl; auto.
@@ -570,7 +575,7 @@ Lemma agree_set_undef_mreg:
   agree ms sp rs ->
   Val.lessdef v (rs'#(preg_of r)) ->
   (forall r', data_preg r' = true -> r' <> (preg_of r) -> preg_notin r' rl -> rs'#r' = rs#r') ->
-  agree (Regmap.set r v (Mach.undef_regs rl ms)) sp rs'.
+  agree (Regmap.set r (ROne v) (Mach.undef_regs rl ms)) sp rs'.
 Proof.
   intros.
   apply agree_set_mreg with (rs := Pregmap.set (preg_of r) (rs#(preg_of r)) rs'); auto.
@@ -590,8 +595,9 @@ Proof.
   intros. destruct H. split; auto.
   rewrite H1; auto using preg_of_not_overlap_SP with asmgen.
   apply preg_notin_charact; auto using preg_of_not_overlap_SP with asmgen.
-  intros. unfold regmap_set, Regmap.set. destruct (RegEq.eq r0 r). congruence.
+  intros. unfold regmap_set, Regmap.set, regmap_get. destruct (RegEq.eq r0 r). congruence.
 
+  fold ((Mach.undef_regs (subreg_list r) (Mach.undef_regs (superreg_list r) (Mach.undef_regs rl ms)))$r0).
   destruct (overlap_dec r0 r).
   - unfold overlap in o. destruct o.
     + rewrite Mach.undef_regs_same; simpl; auto.
@@ -690,13 +696,13 @@ Qed.
 
 Lemma builtin_args_match:
   forall ge ms sp rs m m', agree ms sp rs -> Mem.extends m m' ->
-  forall al vl, eval_builtin_args ge ms sp m al vl ->
+  forall al vl, eval_builtin_args ge (regmap_read ms) sp m al vl ->
   exists vl', eval_builtin_args ge rs sp m' (map (map_builtin_arg preg_of) al) vl'
            /\ Val.lessdef_list vl vl'.
 Proof.
   induction 3; intros; simpl.
   exists (@nil val); split; constructor.
-  exploit (@eval_builtin_arg_lessdef _ ge ms (fun r => rs (preg_of r))); eauto.
+  exploit (@eval_builtin_arg_lessdef _ ge (regmap_read ms) (fun r => rs (preg_of r))); eauto.
   intros; eapply preg_val; eauto.
   intros (v1' & A & B).
   destruct IHlist_forall2 as [vl' [C D]].
@@ -715,7 +721,12 @@ Proof.
   rewrite sub_preg_list_correct, super_preg_list_correct.
   repeat apply agree_undef_regs_undef_pregs; auto.
 - auto.
-- repeat apply agree_set_mreg_parallel; auto.
+- unfold regmap_set, pregmap_set.
+  repeat rewrite sub_preg_list_correct, super_preg_list_correct.
+  apply agree_set_mreg_parallel; auto.
+  repeat apply agree_undef_regs_undef_pregs; auto.
+  apply agree_set_mreg_parallel; auto.
+  repeat apply agree_undef_regs_undef_pregs; auto.
   apply Val.hiword_lessdef; auto.
   apply Val.loword_lessdef; auto.
 Qed.
@@ -730,9 +741,13 @@ Proof.
   unfold not; intros. apply preg_overlap_sym in H0.
   eapply special_preg_no_overlap in H; eauto.
 - auto.
-- rewrite !Pregmap.gso; auto.
+- rewrite !pregmap_gso; auto.
   red; intros; subst r. rewrite preg_of_data in H; discriminate.
+  unfold not; intros. apply preg_overlap_sym in H0.
+  eapply special_preg_no_overlap in H; eauto.
   red; intros; subst r. rewrite preg_of_data in H; discriminate.
+  unfold not; intros. apply preg_overlap_sym in H0.
+  eapply special_preg_no_overlap in H; eauto.
 Qed.
 
 (** * Correspondence between Mach code and Asm code *)

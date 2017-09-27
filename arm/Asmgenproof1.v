@@ -1434,7 +1434,7 @@ Proof.
   econstructor; split.
   eapply exec_straight_trans. eexact A. apply exec_straight_one. simpl; eauto. auto.
   split; intros; Simpl.
-  destruct (eval_condition c0 rs ## (preg_of ## args) m) as [b|]; simpl; auto.
+  destruct (eval_condition c0 (map rs (map preg_of args)) m) as [b|]; simpl; auto.
   destruct B as [B1 B2]; rewrite B1. destruct b; auto.
 Qed.
 

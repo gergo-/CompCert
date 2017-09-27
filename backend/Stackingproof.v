@@ -554,7 +554,7 @@ Qed.
 (** Agreement with Mach register states *)
 
 Definition agree_regs (j: meminj) (ls: locset) (rs: regset) : Prop :=
-  forall r, Val.inject j (ls @ (R r)) (rs r).
+  forall r, Val.inject j (ls @ (R r)) (rs # r).
 
 (** Agreement over locations *)
 
@@ -589,7 +589,7 @@ Definition agree_callee_save (ls ls0: locset) : Prop :=
 
 Lemma agree_reg:
   forall j ls rs r,
-  agree_regs j ls rs -> Val.inject j (ls @ (R r)) (rs r).
+  agree_regs j ls rs -> Val.inject j (ls @ (R r)) (rs # r).
 Proof.
   intros. auto.
 Qed.
@@ -627,13 +627,13 @@ Lemma agree_regs_set_reg_direct:
   agree_regs j ls rs ->
   Val.inject j v v' ->
   Val.has_type v (mreg_type r) ->
-  agree_regs j (Locmap.set (R r) v ls) (Regmap.set r v' rs).
+  agree_regs j (Locmap.set (R r) v ls) (Regmap.set r (ROne v') rs).
 Proof.
-  intros; red; intros.
+  intros; red; intros. unfold regmap_get.
   destruct (OrderedMreg.eq_dec r r0), (mreg_diff_dec r r0).
   - subst. apply same_not_diff in m; contradiction.
   - subst. rewrite Locmap.gss, Val.load_result_same, Regmap.gss; auto.
-  - rewrite Locmap.gso, Regmap.gso; auto.
+  - rewrite Locmap.gso, Regmap.gso; fold (rs # r0); auto.
   - unfold Locmap.set, Locmap.get.
     rewrite dec_eq_false, pred_dec_false; auto. congruence.
 Qed.
@@ -661,7 +661,7 @@ Proof.
   destruct res eqn:RES; simpl; intros.
 - apply agree_regs_set_reg; auto.
 - auto.
-- repeat apply agree_regs_set_reg_direct; try tauto.
+- repeat apply agree_regs_set_reg; try tauto.
   apply Val.hiword_inject; auto.
   apply Val.loword_inject; auto.
 Qed.
@@ -669,7 +669,7 @@ Qed.
 Lemma agree_regs_exten:
   forall j ls rs ls' rs',
   agree_regs j ls rs ->
-  (forall r, ls' @ (R r) = Vundef \/ ls' @ (R r) = ls @ (R r) /\ rs' r = rs r) ->
+  (forall r, ls' @ (R r) = Vundef \/ ls' @ (R r) = ls @ (R r) /\ rs' # r = rs # r) ->
   agree_regs j ls' rs'.
 Proof.
   intros; red; intros.
@@ -994,7 +994,7 @@ Local Opaque mreg_type.
   apply range_split with (mid := pos1 + sz) in SEP; [ | omega ].
   unfold sz at 1 in SEP. rewrite <- size_type_chunk in SEP.
   apply range_contains in SEP; auto.
-  exploit (contains_set_stack (fun v' => Val.inject j (ls @ (R r)) v') (rs r)).
+  exploit (contains_set_stack (fun v' => Val.inject j (ls @ (R r)) v') (rs # r)).
   eexact SEP.
   apply load_result_inject; auto. apply wt_ls.
   clear SEP; intros (m1 & STORE & SEP).
@@ -1220,7 +1220,7 @@ Variable ls0: locset.
 Variable m: mem.
 
 Definition agree_unused (ls0: locset) (rs: regset) : Prop :=
-  forall r, ~(mreg_within_bounds b r) -> Val.inject j (ls0 @ (R r)) (rs r).
+  forall r, ~(mreg_within_bounds b r) -> Val.inject j (ls0 @ (R r)) (rs # r).
 
 Lemma restore_callee_save_rec_correct:
   forall l ofs rs k,
@@ -1232,8 +1232,8 @@ Lemma restore_callee_save_rec_correct:
     star step tge
       (State cs fb (Vptr sp Ptrofs.zero) (restore_callee_save_rec l ofs k) rs m)
    E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m)
-  /\ (forall r, In (containing_reg r) l -> Val.inject j (ls0 @ (R r)) (rs' r))
-  /\ (forall r, ~(In (containing_reg r) l) -> rs' r = rs r)
+  /\ (forall r, In (containing_reg r) l -> Val.inject j (ls0 @ (R r)) (rs' # r))
+  /\ (forall r, ~(In (containing_reg r) l) -> rs' # r = rs # r)
   /\ agree_unused ls0 rs'.
 Proof.
 Local Opaque mreg_type.
@@ -1265,12 +1265,10 @@ Local Opaque mreg_type.
     generalize (containing_reg_charact r0); intros [EQ | SUB].
     assert (r = r0) by congruence. subst r0.
     rewrite C by auto. rewrite regmap_gss. exact SPEC.
-    rewrite C by auto. unfold Regmap.get, regmap_set.
-    rewrite Regmap.gso.
+    rewrite C by auto.
     admit.
     (* FIXME: must change the undefinition of regs in Regmap. Only undef subregs
     if the value being stored is not a pair. *)
-    rewrite <- H4 in SUB. apply subreg_not_eq; auto.
 
   split. intros. 
     rewrite C by tauto. apply regmap_gso.
@@ -1291,9 +1289,9 @@ Lemma restore_callee_save_correct:
        (State cs fb (Vptr sp Ptrofs.zero) (restore_callee_save fe k) rs m)
     E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m)
   /\ (forall r,
-        is_callee_save r = true -> Val.inject j (ls0 @ (R r)) (rs' r))
+        is_callee_save r = true -> Val.inject j (ls0 @ (R r)) (rs' # r))
   /\ (forall r,
-        is_callee_save r = false -> rs' r = rs r).
+        is_callee_save r = false -> rs' # r = rs # r).
 Proof.
   intros.
   unfold frame_contents, frame_contents_1 in H.
@@ -1678,7 +1676,7 @@ Proof.
   intros.
   assert (loc_argument_acceptable l) by (apply loc_arguments_acceptable_2 with sg; auto).
   destruct l; red in H0.
-- exists (rs r); split. constructor. auto.
+- exists (rs # r); split. constructor. auto.
 - destruct sl; try contradiction.
   inv MS.
 + elim (H1 _ H).
@@ -1758,7 +1756,7 @@ Lemma transl_builtin_arg_correct:
   (forall l, In l (params_of_builtin_arg a) -> loc_valid f l = true) ->
   (forall sl ofs ty, In (S sl ofs ty) (params_of_builtin_arg a) -> slot_within_bounds b sl ofs ty) ->
   exists v',
-     eval_builtin_arg ge rs (Vptr sp' Ptrofs.zero) m' (transl_builtin_arg fe a) v'
+     eval_builtin_arg ge (regmap_read rs) (Vptr sp' Ptrofs.zero) m' (transl_builtin_arg fe a) v'
   /\ Val.inject j v v'.
 Proof.
   assert (SYMB: forall id ofs, Val.inject j (Senv.symbol_address ge id ofs) (Senv.symbol_address ge id ofs)).
@@ -1771,7 +1769,7 @@ Local Opaque fe.
   induction 1; simpl; intros VALID BOUNDS.
 - assert (loc_valid f x = true) by auto.
   destruct x as [r | [] ofs ty]; try discriminate.
-  + exists (rs r); econstructor; unfold Locmap.read; auto with barg.
+  + exists (rs # r); split. econstructor. unfold Locmap.read; auto with barg.
   + exploit frame_get_local; eauto. intros (v & A & B).
     exists v; split; auto. constructor; auto.
 - econstructor; eauto with barg.
@@ -1804,7 +1802,7 @@ Lemma transl_builtin_args_correct:
   (forall l, In l (params_of_builtin_args al) -> loc_valid f l = true) ->
   (forall sl ofs ty, In (S sl ofs ty) (params_of_builtin_args al) -> slot_within_bounds b sl ofs ty) ->
   exists vl',
-     eval_builtin_args ge rs (Vptr sp' Ptrofs.zero) m' (List.map (transl_builtin_arg fe) al) vl'
+     eval_builtin_args ge (regmap_read rs) (Vptr sp' Ptrofs.zero) m' (List.map (transl_builtin_arg fe) al) vl'
   /\ Val.inject_list j vl vl'.
 Proof.
   induction 1; simpl; intros VALID BOUNDS.
@@ -1946,7 +1944,7 @@ Proof.
                end).
   eapply frame_undef_regs with (rl := destroyed_by_setstack ty) in SEP.
   assert (A: exists m'',
-              store_stack m' (Vptr sp' Ptrofs.zero) ty (Ptrofs.repr ofs') (rs0 src) = Some m''
+              store_stack m' (Vptr sp' Ptrofs.zero) ty (Ptrofs.repr ofs') (rs0 # src) = Some m''
            /\ m'' |= frame_contents f j sp' (Locmap.set (S sl ofs ty) (rs @ (R src))
                                                (LTL.undef_regs (destroyed_by_setstack ty) rs))
                                             (parent_locset s) (parent_sp cs') (parent_ra cs')
@@ -2138,7 +2136,7 @@ Proof.
   apply frame_undef_regs; auto.
 
 - (* Ljumptable *)
-  assert (rs0 arg = Vint n).
+  assert (rs0 # arg = Vint n).
   { generalize (AGREGS arg). rewrite H. intro IJ; inv IJ; auto. }
   econstructor; split.
   apply plus_one; eapply exec_Mjumptable; eauto.

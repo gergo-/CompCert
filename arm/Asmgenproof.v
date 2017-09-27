@@ -556,7 +556,7 @@ Proof.
 
 - (* Msetstack *)
   unfold store_stack in H.
-  assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
+  assert (Val.lessdef (rs $ src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [A B]].
   left; eapply exec_straight_steps; eauto.
   rewrite (sp_val _ _ _ AG) in A. intros. simpl in TR.
@@ -627,7 +627,7 @@ Opaque loadind.
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
-  assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
+  assert (Val.lessdef (rs $ src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [C D]].
   left; eapply exec_straight_steps; eauto.
   intros. simpl in TR.
@@ -643,8 +643,8 @@ Opaque loadind.
     eapply transf_function_no_overflow; eauto.
   destruct ros as [rf|fid]; simpl in H; monadInv H5.
 + (* Indirect call *)
-  assert (rs rf = Vptr f' Ptrofs.zero).
-    destruct (rs rf); try discriminate.
+  assert (rs $ rf = Vptr f' Ptrofs.zero).
+    destruct (rs $ rf); try discriminate.
     revert H; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
   assert (rs0 x0 = Vptr f' Ptrofs.zero).
     exploit ireg_val; eauto. rewrite H5; intros LD; inv LD; auto.
@@ -716,8 +716,8 @@ Opaque loadind.
   }
   destruct ros as [rf|fid]; simpl in H; monadInv H7.
 + (* Indirect call *)
-  assert (rs rf = Vptr f' Ptrofs.zero).
-    destruct (rs rf); try discriminate.
+  assert (rs $ rf = Vptr f' Ptrofs.zero).
+    destruct (rs $ rf); try discriminate.
     revert H; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
   assert (rs0 x0 = Vptr f' Ptrofs.zero).
     exploit ireg_val; eauto. rewrite H7; intros LD; inv LD; auto.
@@ -972,7 +972,8 @@ Proof.
   econstructor; eauto.
   constructor.
   apply Mem.extends_refl.
-  split. auto. simpl. unfold Vnullptr; simpl; congruence. intros. rewrite Regmap.gi. auto.
+  split. auto. simpl. unfold Vnullptr; simpl; congruence. intros.
+  unfold regmap_init, regmap_get. auto.
   unfold Genv.symbol_address.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved.

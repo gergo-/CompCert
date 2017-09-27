@@ -131,56 +131,66 @@ End RegEq.
 
 Module Regmap := EMap(RegEq).
 
-Definition regset := Regmap.t val.
+Inductive regmap_entry := ROne (v: val).
+
+Definition regset := Regmap.t regmap_entry.
 
 Fixpoint undef_regs (rl: list mreg) (rs: regset) {struct rl} : regset :=
   match rl with
   | nil => rs
-  | r1 :: rl' => Regmap.set r1 Vundef (undef_regs rl' rs)
+  | r1 :: rl' => Regmap.set r1 (ROne Vundef) (undef_regs rl' rs)
   end.
+
+Definition regmap_get (r: mreg) (rs: regset): val :=
+  match rs r with
+  | ROne v => v
+  end.
+
+Definition regmap_read (rs: regset): mreg -> val := fun (r: mreg) => regmap_get r rs.
+
+Definition regmap_init (v: val): regset := fun (_: mreg) => ROne v.
 
 (* Set register [r] to [v] in regset [rs], taking register aliasing into account
   by first making all of [r]'s aliases undefined. *)
-Definition regmap_set r v rs :=
+Definition regmap_set (r: mreg) (v: val) (rs: regset): regset :=
   let rs' := undef_regs (subreg_list r) (undef_regs (superreg_list r) rs) in
-  Regmap.set r v rs'.
+  Regmap.set r (ROne v) rs'.
 
-Notation "a ## b" := (List.map a b) (at level 1).
-Notation "a # b <- c" := (regmap_set b c a) (at level 1, b at next level).
+Notation "rs # r" := (regmap_get r rs) (at level 1).
+Notation "rs ## regs" := (List.map (fun r => regmap_get r rs) regs) (at level 1).
+Notation "rs # r <- v" := (regmap_set r v rs) (at level 1, r at next level).
+
+Lemma regmap_gss:
+  forall r rs v, (rs#r <- v) # r = v.
+Proof.
+  intros. unfold regmap_set, Regmap.set, regmap_get. destruct (RegEq.eq r r); congruence.
+Qed.
 
 Lemma undef_regs_other:
-  forall r rl rs, ~In r rl -> undef_regs rl rs r = rs r.
+  forall r rl rs, ~In r rl -> (undef_regs rl rs) # r = rs # r.
 Proof.
-  induction rl; simpl; intros. auto. rewrite Regmap.gso. apply IHrl. intuition. intuition.
+  induction rl; simpl; intros. auto.
+  unfold regmap_get. rewrite Regmap.gso. apply IHrl. intuition. intuition.
 Qed.
 
 Lemma undef_regs_same:
-  forall r rl rs, In r rl -> undef_regs rl rs r = Vundef.
+  forall r rl rs, In r rl -> (undef_regs rl rs) # r = Vundef.
 Proof.
   induction rl; simpl; intros. tauto.
-  destruct H. subst a. apply Regmap.gss.
-  unfold Regmap.set. destruct (RegEq.eq r a); auto.
+  destruct H. subst a. unfold regmap_get. rewrite Regmap.gss; auto.
+  unfold Regmap.set, regmap_get in *. destruct (RegEq.eq r a); auto.
 Qed.
 
 Lemma regmap_gso:
-  forall r1 r2 rs v, mreg_diff r1 r2 -> (rs#r1 <- v) r2 = rs r2.
+  forall r1 r2 rs v, mreg_diff r1 r2 -> (rs#r1 <- v) # r2 = rs # r2.
 Proof.
   intros. unfold mreg_diff, overlap in H. destruct H. apply Decidable.not_or in H0. destruct H0.
-  unfold regmap_set, Regmap.set.
+  unfold regmap_set, Regmap.set, regmap_get.
   destruct (RegEq.eq r2 r1); try congruence.
+  fold ((undef_regs (subreg_list r1) (undef_regs (superreg_list r1) rs))# r2).
   rewrite !undef_regs_other. auto.
-  contradict H0. apply superreg_subreg.
-  unfold superreg. unfold superreg_list in H0.
-  destruct (superregs r1); compute in H0; intuition auto.
-  contradict H1.
-  unfold subreg. unfold subreg_list in H1.
-  destruct (subregs r1); try destruct p; compute in H1; intuition auto.
-Qed.
-
-Lemma regmap_gss:
-  forall r rs v, (rs#r <- v) r = v.
-Proof.
-  intros. unfold regmap_set, Regmap.set. destruct (RegEq.eq r r); congruence.
+  contradict H0. apply superreg_subreg, superreg_in_list; auto.
+  contradict H1. apply subreg_in_list; auto.
 Qed.
 
 Definition set_pair (p: rpair mreg) (v: val) (rs: regset) : regset :=
@@ -193,7 +203,7 @@ Definition set_res (res: builtin_res mreg) (v: val) (rs: regset) : regset :=
   match res with
   | BR r => rs#r <- v
   | BR_none => rs
-  | BR_splitlong hi lo => Regmap.set lo (Val.loword v) (Regmap.set hi (Val.hiword v) rs)
+  | BR_splitlong hi lo => rs#hi <- (Val.hiword v) #lo <- (Val.loword v)
   end.
 
 Definition is_label (lbl: label) (instr: instruction) : bool :=
@@ -239,7 +249,7 @@ Definition find_function_ptr
         (ge: genv) (ros: mreg + ident) (rs: regset) : option block :=
   match ros with
   | inl r =>
-      match rs r with
+      match rs # r with
       | Vptr b ofs => if Ptrofs.eq ofs Ptrofs.zero then Some b else None
       | _ => None
       end
@@ -251,7 +261,7 @@ Definition find_function_ptr
 
 Inductive extcall_arg (rs: regset) (m: mem) (sp: val): loc -> val -> Prop :=
   | extcall_arg_reg: forall r,
-      extcall_arg rs m sp (R r) (rs r)
+      extcall_arg rs m sp (R r) (rs # r)
   | extcall_arg_stack: forall ofs ty v,
       load_stack m sp ty (Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs)) = Some v ->
       extcall_arg rs m sp (S Outgoing ofs ty) v.
@@ -326,7 +336,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c (rs#dst <- v) m)
   | exec_Msetstack:
       forall s f sp src ofs ty c rs m m' rs',
-      store_stack m sp ty ofs (rs src) = Some m' ->
+      store_stack m sp ty ofs (rs # src) = Some m' ->
       rs' = undef_regs (destroyed_by_setstack ty) rs ->
       step (State s f sp (Msetstack src ofs ty :: c) rs m)
         E0 (State s f sp c rs' m')
@@ -354,7 +364,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mstore:
       forall s f sp chunk addr args src c rs m m' a rs',
       eval_addressing ge sp addr rs##args = Some a ->
-      Mem.storev chunk m a (rs src) = Some m' ->
+      Mem.storev chunk m a (rs # src) = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (State s f sp (Mstore chunk addr args src :: c) rs m)
         E0 (State s f sp c rs' m')
@@ -377,7 +387,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
-      eval_builtin_args ge rs sp m args vargs ->
+      eval_builtin_args ge (regmap_read rs) sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s f sp (Mbuiltin ef args res :: b) rs m)
@@ -404,7 +414,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c rs' m)
   | exec_Mjumptable:
       forall s fb f sp arg tbl c rs m n lbl c' rs',
-      rs arg = Vint n ->
+      rs # arg = Vint n ->
       list_nth_z tbl (Int.unsigned n) = Some lbl ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       find_label lbl f.(fn_code) = Some c' ->
@@ -449,12 +459,12 @@ Inductive initial_state (p: program): state -> Prop :=
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some fb ->
-      initial_state p (Callstate nil fb (Regmap.init Vundef) m0).
+      initial_state p (Callstate nil fb (regmap_init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m r retcode,
       loc_result signature_main = One r ->
-      rs r = Vint retcode ->
+      rs # r = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
 Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
