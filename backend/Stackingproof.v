@@ -618,8 +618,8 @@ Proof.
   - subst. apply same_not_diff in m; contradiction.
   - subst. rewrite Locmap.gss, Val.load_result_same, regmap_gss; auto.
   - rewrite Locmap.gso, regmap_gso; auto.
-  - unfold Locmap.set, Locmap.get.
-    rewrite dec_eq_false, pred_dec_false; auto. congruence.
+  - unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
+    rewrite pred_dec_false, dec_eq_false; auto. congruence.
 Qed.
 
 Lemma agree_regs_set_reg_direct:
@@ -634,8 +634,8 @@ Proof.
   - subst. apply same_not_diff in m; contradiction.
   - subst. rewrite Locmap.gss, Val.load_result_same, Regmap.gss; auto.
   - rewrite Locmap.gso, Regmap.gso; fold (rs # r0); auto.
-  - unfold Locmap.set, Locmap.get.
-    rewrite dec_eq_false, pred_dec_false; auto. congruence.
+  - unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
+    rewrite pred_dec_false, dec_eq_false; auto. congruence.
 Qed.
 
 Lemma agree_regs_set_pair:
@@ -1019,7 +1019,7 @@ Remark LTL_undef_regs_same:
   forall r rl ls, In r rl -> (LTL.undef_regs rl ls) @ (R r) = Vundef.
 Proof.
   induction rl; simpl; intros. contradiction.
-  unfold Locmap.set, Locmap.get.
+  unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
   destruct (Loc.diff_dec (R a) (R r)). fold (LTL.undef_regs rl ls) @ (R r).
   rewrite IHrl. auto.
   assert (a <> r) by (apply Loc.diff_not_eq in d; congruence).
@@ -1048,7 +1048,7 @@ Remark undef_regs_type:
 Proof.
   induction rl; simpl; intros.
 - auto.
-- unfold Locmap.set, Locmap.get.
+- unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
   destruct (Loc.diff_dec (R a) l); fold ((LTL.undef_regs rl ls) @ l); auto.
   destruct (Loc.eq (R a) l); simpl; auto.
   rewrite Val.load_result_same; simpl; auto.

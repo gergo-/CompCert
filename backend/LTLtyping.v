@@ -116,7 +116,7 @@ Lemma wt_setreg:
   Val.has_type v (mreg_type r) -> wt_locset ls -> wt_locset (Locmap.set (R r) v ls).
 Proof.
   intros; red; intros.
-  unfold Locmap.set, Locmap.get.
+  unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
   destruct (Loc.diff_dec (R r) l). fold (ls @ l). auto.
   destruct (Loc.eq (R r) l).
   subst l. rewrite Val.load_result_same; auto. red. auto.

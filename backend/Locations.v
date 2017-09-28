@@ -336,19 +336,33 @@ Module Locmap.
       in the [Stacking] phase.  Hence, values stored in stack slots
       are normalized according to the type of the slot. *)
 
+  Definition set_reg_val (r: mreg) (l': loc) (v: val) : val :=
+    if Loc.eq (R r) l' then
+      Val.load_result (chunk_of_type (mreg_type r)) v
+    else
+      Vundef.
+
   Definition set (l: loc) (v: val) (m: t) : t :=
     fun (l': loc) =>
       if Loc.diff_dec l l' then
         m l'
-      else if Loc.eq l l' then
-        EOne (Val.load_result (chunk_of_type (Loc.type l)) v)
-      else EOne Vundef.
-
+      else
+        match l with
+          | R r =>
+            EOne (set_reg_val r l' v)
+          | S _ _ _ =>
+            if Loc.eq l l' then
+              EOne (Val.load_result (chunk_of_type (Loc.type l)) v)
+            else
+              EOne Vundef
+        end.
+  
   Lemma gss: forall l v m,
     get l (set l v m) = Val.load_result (chunk_of_type (Loc.type l)) v.
   Proof.
-    intros. unfold get, set.
-    rewrite pred_dec_false, dec_eq_true; auto using Loc.same_not_diff.
+    intros. unfold get, set, set_reg_val.
+    rewrite pred_dec_false; auto using Loc.same_not_diff.
+    destruct l; rewrite dec_eq_true; auto using Loc.same_not_diff.
   Qed.
 
   Lemma gss_reg: forall r v m, Val.has_type v (mreg_type r) -> get (R r) (set (R r) v m) = v.
@@ -383,10 +397,10 @@ Module Locmap.
   Proof.
     assert (P: forall ll l m, get l m = Vundef -> get l (undef ll m) = Vundef).
     { induction ll; simpl; intros. auto. apply IHll.
-      unfold get, set.
+      unfold get, set, set_reg_val.
       destruct (Loc.diff_dec a l); auto.
-      destruct (Loc.eq a l); auto.
-      apply Val.load_result_same; simpl; auto. }
+      destruct a eqn:A; rewrite <- A;
+        destruct (Loc.eq a l); try apply Val.load_result_same; simpl; auto. }
     induction ll; simpl; intros. contradiction.
     destruct H. apply P. subst a. apply gss_typed. exact I.
     auto.

@@ -261,22 +261,24 @@ Lemma locmap_set_lessdef:
   forall ls1 ls2 v1 v2 l,
   locmap_lessdef ls1 ls2 -> Val.lessdef v1 v2 -> locmap_lessdef (Locmap.set l v1 ls1) (Locmap.set l v2 ls2).
 Proof.
-  intros; red; intros l'. unfold Locmap.set, Locmap.get.
+  intros; red; intros l'. unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
   destruct (Loc.diff_dec l l'); auto.
 - fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
-- destruct (Loc.eq l l').
-  destruct l; auto using Val.load_result_lessdef. auto.
+- destruct l eqn:L; rewrite <- L in *.
+  destruct (Loc.eq l l'); simpl; auto using Val.load_result_lessdef.
+  destruct (Loc.eq l l'); simpl; auto using Val.load_result_lessdef.
 Qed.
 
 Lemma locmap_set_undef_lessdef:
   forall ls1 ls2 l,
   locmap_lessdef ls1 ls2 -> locmap_lessdef (Locmap.set l Vundef ls1) ls2.
 Proof.
-  intros; red; intros l'. unfold Locmap.set, Locmap.get.
+  intros; red; intros l'. unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
   destruct (Loc.diff_dec l l'); auto.
 - fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
-- destruct (Loc.eq l l').
-  subst. destruct (Loc.type l'); auto. auto.
+- destruct l eqn:L; rewrite <- L in *.
+  destruct (Loc.eq l l'); simpl; auto; rewrite Val.load_result_same; simpl; auto.
+  destruct (Loc.eq l l'); simpl; auto; rewrite Val.load_result_same; simpl; auto.
 Qed.
 
 Lemma locmap_undef_regs_lessdef:
