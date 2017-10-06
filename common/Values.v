@@ -181,6 +181,12 @@ Proof.
   unfold has_type, Vnullptr, Tptr; destruct Archi.ptr64; reflexivity.
 Qed.
 
+Lemma has_type_Tany64:
+  forall v, Val.has_type v Tany64.
+Proof.
+  destruct v; simpl; auto.
+Qed.
+
 Lemma has_subtype:
   forall ty1 ty2 v,
   subtype ty1 ty2 = true -> has_type v ty1 -> has_type v ty2.
@@ -2044,6 +2050,20 @@ Proof.
   destruct v; simpl; destruct (Word.of_value v'); compute; auto.
   destruct v; simpl; auto.
   destruct v; simpl; auto.
+Qed.
+
+Lemma pair_hi_type:
+  forall v, has_type (pair_hi v) Tany32.
+Proof.
+  intros. destruct v; simpl; auto.
+  destruct v; try destruct hi; simpl; auto.
+Qed.
+
+Lemma pair_lo_type:
+  forall v, has_type (pair_lo v) Tany32.
+Proof.
+  intros. destruct v; simpl; auto.
+  destruct v; try destruct lo; simpl; auto.
 Qed.
 
 (** The ``is less defined'' relation between values.

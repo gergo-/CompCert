@@ -87,7 +87,7 @@ Definition mreg_type (r: mreg): typ :=
   | S0  | S1  | S2  | S3  | S4  | S5  | S6  | S7
   | S8  | S9  | S10 | S11 | S12 | S13 | S14 | S15
   | S16 | S17 | S18 | S19 | S20 | S21 | S22 | S23
-  | S24 | S25 | S26 | S27 | S28 | S29 | S30 | S31 => Tsingle
+  | S24 | S25 | S26 | S27 | S28 | S29 | S30 | S31 => Tany32
   | D0  | D1  | D2  | D3  | D4  | D5  | D6  | D7
   | D8  | D9  | D10 | D11 | D12 | D13 | D14 | D15 => Tany64
   end.
@@ -238,6 +238,22 @@ Proof.
   intros. destruct r; compute in H; inversion H; auto.
 Qed.
 
+Lemma mreg_part_inj:
+  forall r s, mreg_part r = mreg_part s -> r = s.
+Proof.
+  intros.
+  destruct (mreg_part r) eqn:R, (mreg_part s) eqn:S; try congruence.
+  apply full_is_eq in R. apply full_is_eq in S. congruence.
+  destruct r; try inversion R; destruct s; try inversion S; congruence.
+  destruct r; try inversion R; destruct s; try inversion S; congruence.
+Qed.
+
+Lemma mreg_part_inj':
+  forall r s, r <> s -> mreg_part r <> mreg_part s.
+Proof.
+  intros. contradict H. auto using mreg_part_inj.
+Qed.
+
 (* TODO: much more facts here *)
 
 End REG_PARTS.
@@ -298,6 +314,14 @@ Proof.
   generalize (subregs_or_superregs r2); intros.
   destruct H0. rewrite H0 in H; tauto.
   unfold superreg_list. rewrite H0; auto.
+Qed.
+
+Lemma superreg_list_eq:
+  forall r1 r2, superreg r1 r2 <-> superreg_list r2 = r1 :: nil.
+Proof.
+  unfold superreg, superreg_list. split; intros.
+  destruct (superregs r2) as [a|]; simpl; destruct H; auto.
+  destruct (superregs r2); congruence.
 Qed.
 
 Lemma superreg_in_list:
@@ -438,6 +462,99 @@ Proof.
   intros. unfold mreg_diff; split.
   - congruence.
   - contradict H. apply overlap_containing_reg; auto.
+Qed.
+
+Lemma mreg_relation_cases:
+  forall r s,
+  r = s \/ mreg_diff r s \/ subreg r s \/ subreg s r.
+Proof.
+  intros.
+  destruct (mreg_eq r s); auto.
+  destruct (mreg_diff_dec r s); auto.
+  destruct (subreg_dec r s); auto.
+  destruct (subreg_dec s r); auto.
+  unfold mreg_diff, overlap in n0.
+  tauto.
+Qed.
+
+Lemma subreg_part_cases:
+  forall r s,
+  subreg r s ->
+  (mreg_part r = PHigh s /\ mreg_part s = PFull s) \/ (mreg_part r = PLow s /\ mreg_part s = PFull s).
+Proof.
+  intros.
+  unfold subreg in *.
+  destruct s; simpl in H; inversion H; subst; auto.
+Qed.
+
+Lemma full_reg_is_containing_reg:
+  forall r, mreg_part r = PFull r -> r = containing_reg r.
+Proof.
+  intros. destruct r; try inversion H; auto.
+Qed.
+
+Lemma superreg_is_containing_reg:
+  forall r s, subreg r s -> containing_reg r = s.
+Proof.
+  intros. apply subreg_superreg in H. destruct r; try inversion H; auto.
+Qed.
+
+Lemma superreg_type_Tany64:
+  forall r s, subreg r s -> mreg_type s = Tany64.
+Proof.
+  intros. apply subreg_superreg in H. destruct r; try inversion H; auto.
+Qed.
+
+Lemma subreg_type_Tany32:
+  forall r s, subreg r s -> mreg_type r = Tany32.
+Proof.
+  intros. destruct s; try inversion H; subst; auto.
+Qed.
+
+Corollary high_type_Tany32:
+  forall r s, mreg_part r = PHigh s -> mreg_type r = Tany32.
+Proof.
+  eauto using subreg_type_Tany32, high_is_subreg.
+Qed.
+
+Corollary low_type_Tany32:
+  forall r s, mreg_part r = PLow s -> mreg_type r = Tany32.
+Proof.
+  eauto using subreg_type_Tany32, low_is_subreg.
+Qed.
+
+Lemma diff_high_cases:
+  forall r s t,
+  mreg_diff r s -> mreg_part s = PHigh t -> (mreg_diff r t \/ mreg_part r = PLow t).
+Proof.
+  intros. unfold mreg_diff, overlap in *.
+  destruct H. apply Decidable.not_or in H1. destruct H1.
+  destruct (subreg_dec r t).
+  - right. apply subreg_part_cases in s0. destruct s0, H3.
+    apply mreg_part_inj' in H. congruence.
+    apply mreg_part_inj' in H. congruence.
+  - left. split.
+    + contradict n. subst t. apply high_is_subreg in H0; contradiction.
+    + apply high_is_subreg in H0.
+      contradict n. destruct n; auto.
+      exfalso; eauto using subreg_intrans.
+Qed.
+
+Lemma diff_low_cases:
+  forall r s t,
+  mreg_diff r s -> mreg_part s = PLow t -> (mreg_diff r t \/ mreg_part r = PHigh t).
+Proof.
+  intros. unfold mreg_diff, overlap in *.
+  destruct H. apply Decidable.not_or in H1. destruct H1.
+  destruct (subreg_dec r t).
+  - right. apply subreg_part_cases in s0. destruct s0, H3.
+    apply mreg_part_inj' in H. congruence.
+    apply mreg_part_inj' in H. congruence.
+  - left. split.
+    + contradict n. subst t. apply low_is_subreg in H0; contradiction.
+    + apply low_is_subreg in H0.
+      contradict n. destruct n; auto.
+      exfalso; eauto using subreg_intrans.
 Qed.
 
 End REG_ALIASING.

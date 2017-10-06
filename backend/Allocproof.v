@@ -724,7 +724,7 @@ Lemma loc_unconstrained_satisf:
 Proof.
   intros; red; intros.
   destruct (OrderedEquation.eq_dec q (Eq k r l)).
-  subst q; simpl. unfold l; rewrite Locmap.gss. rewrite Val.load_result_same; auto.
+  subst q. unfold l; rewrite Locmap.gss. rewrite Val.load_result_same; auto.
   assert (EqSet.In q (remove_equation (Eq k r l) e)).
     simpl. ESD.fsetdec.
   rewrite Locmap.gso. apply H; auto. eapply loc_unconstrained_sound; eauto.
@@ -751,7 +751,7 @@ Lemma parallel_assignment_satisf:
 Proof.
   intros; red; intros.
   destruct (OrderedEquation.eq_dec q (Eq k r l)).
-  subst q; simpl. unfold l; rewrite Regmap.gss; rewrite Locmap.gss, Val.load_result_same; auto.
+  subst q. unfold l; rewrite Regmap.gss; rewrite Locmap.gss, Val.load_result_same; auto.
   assert (EqSet.In q (remove_equation {| ekind := k; ereg := r; eloc := l |} e)).
     simpl. ESD.fsetdec.
   exploit reg_loc_unconstrained_sound; eauto. intros [A B].
@@ -780,10 +780,10 @@ Proof.
   simpl in H2. InvBooleans. simpl.
   red; intros.
   destruct (OrderedEquation.eq_dec q (Eq Low res (R mr2))).
-  subst q; simpl. rewrite Regmap.gss. rewrite Locmap.gss, Val.load_result_same by auto.
+  subst q. rewrite Regmap.gss. rewrite Locmap.gss, Val.load_result_same by auto.
   apply Val.loword_lessdef; auto.
   destruct (OrderedEquation.eq_dec q (Eq High res (R mr1))).
-  subst q; simpl. rewrite Regmap.gss. rewrite Locmap.gso, Locmap.gss, Val.load_result_same by auto.
+  subst q. rewrite Regmap.gss. rewrite Locmap.gso, Locmap.gss, Val.load_result_same by auto.
   apply Val.hiword_lessdef; auto.
   assert (EqSet.In q e'). unfold e', remove_equation; simpl; ESD.fsetdec.
   rewrite Regmap.gso. rewrite ! Locmap.gso. auto.
@@ -1360,14 +1360,27 @@ Definition callee_save_loc (l: loc) :=
 Definition agree_callee_save (ls1 ls2: locset) : Prop :=
   forall l, callee_save_loc l -> ls1 @ l = ls2 @ l.
 
+Ltac mreg_part_callee_save :=
+  match goal with
+  | [ HI: mreg_part ?r = PHigh ?s, CS: is_callee_save ?r = _ |- _ ] =>
+    apply high_is_subreg in HI; erewrite subreg_callee_save in CS; eauto;
+      rewrite CS; auto; mreg_part_callee_save
+  | [ LO: mreg_part ?r = PLow ?s, CS: is_callee_save ?r = _ |- _ ] =>
+    apply low_is_subreg in LO; erewrite subreg_callee_save in CS; eauto;
+      rewrite CS; auto; mreg_part_callee_save
+  | [ CS: is_callee_save ?r = _ |- _ ] =>
+    rewrite CS; auto; mreg_part_callee_save
+  | _ => idtac
+  end.
+
 Lemma return_regs_agree_callee_save:
   forall caller callee,
   agree_callee_save caller (return_regs caller callee).
 Proof.
   intros; red; intros. unfold Locmap.get, return_regs. red in H.
   destruct l.
-  rewrite H; auto.
-  destruct sl; auto || congruence.
+  destruct (mreg_part r) eqn:P; mreg_part_callee_save.
+  auto.
 Qed.
 
 Lemma no_caller_saves_sound:
@@ -1507,11 +1520,11 @@ Lemma call_regs_param_values:
 Proof.
   intros. unfold loc_parameters. rewrite list_map_compose.
   apply list_map_exten; intros. symmetry.
-  assert (A: forall l, loc_argument_acceptable l -> call_regs ls (parameter_of_argument l) = ls l).
+  assert (A: forall l, loc_argument_acceptable l -> (call_regs ls) @ (parameter_of_argument l) = ls @ l).
   { destruct l as [r | [] ofs ty]; simpl; auto; contradiction. }
   exploit loc_arguments_acceptable; eauto. destruct x; simpl; intros.
-- unfold Locmap.get. rewrite A; auto.
-- unfold Locmap.get. destruct H0; f_equal; rewrite A; auto.
+- rewrite A; auto.
+- destruct H0; f_equal; rewrite A; auto.
 Qed.
 
 Lemma return_regs_arg_values:
@@ -1526,7 +1539,8 @@ Proof.
   apply Locmap.getpair_exten; intros.
   assert (In l (regs_of_rpairs (loc_arguments sg))) by (eapply in_regs_of_rpairs; eauto).
   exploit loc_arguments_acceptable_2; eauto. exploit H; eauto.
-  destruct l; simpl; intros; try contradiction. unfold Locmap.get, return_regs. rewrite H4; auto.
+  destruct l; simpl; intros; try contradiction.
+  destruct (mreg_part r) eqn:P; mreg_part_callee_save.
 Qed.
 
 Lemma find_function_tailcall:
@@ -1536,7 +1550,8 @@ Lemma find_function_tailcall:
 Proof.
   unfold ros_compatible_tailcall, find_function; intros.
   destruct ros as [r|id]; auto.
-  unfold Locmap.get, return_regs. destruct (is_callee_save r). discriminate. auto.
+  unfold Locmap.get, return_regs. destruct (is_callee_save r) eqn:CS. discriminate.
+  destruct (mreg_part r) eqn:P; mreg_part_callee_save. auto.
 Qed.
 
 Lemma loadv_int64_split:
@@ -1728,11 +1743,11 @@ Proof.
       try inversion e1; try rewrite e; auto. }
   inv H5.
   destruct (OrderedEquation.eq_dec q (Eq Low x (R lo))).
-  subst q; simpl. rewrite Regmap.gss.
+  subst q. rewrite Regmap.gss.
   rewrite Locmap.gss, Val.load_result_same; auto. apply Val.loword_lessdef; auto.
   simpl. tauto.
   destruct (OrderedEquation.eq_dec q (Eq High x (R hi))).
-  subst q; simpl. rewrite Regmap.gss. rewrite Locmap.gso by (red; auto using diff_sym).
+  subst q. rewrite Regmap.gss. rewrite Locmap.gso by (simpl; auto using diff_sym).
   rewrite Locmap.gss, Val.load_result_same. apply Val.hiword_lessdef; auto.
   simpl. tauto.
   assert (EqSet.In q e'').
@@ -1888,7 +1903,7 @@ Proof.
   destruct ros as [r|id]; destruct ros' as [r'|id']; simpl in H0; MonadInv.
   (* two regs *)
   exploit add_equation_lessdef; eauto. intros LD. inv LD.
-  eapply functions_translated; eauto.
+  fold (ls @ (R r')) in H3. eapply functions_translated; eauto. congruence.
   rewrite <- H2 in H. simpl in H. congruence.
   (* two symbols *)
   rewrite symbols_preserved. rewrite Heqo.
@@ -1943,7 +1958,9 @@ Opaque destroyed_by_op.
   {
     destruct H3; InvBooleans. simpl in H6.
     destruct (mreg_type dst) eqn:T; simpl; auto; inversion H6.
+    fold (ls @ (R src1)). fold (ls @ (R src2)).
     destruct (ls @ (R src1)), (ls @ (R src2)); simpl; auto.
+    fold (ls @ (R src1)). fold (ls @ (R src2)).
     destruct (ls @ (R src1)), (ls @ (R src2)); simpl; auto.
   }
   exploit IHmv; eauto. eapply subst_loc_pair_satisf_makelong; eauto.
@@ -1955,7 +1972,7 @@ Opaque destroyed_by_op.
   {
     destruct H3. simpl in H5. InvBooleans.
     destruct (mreg_type dst) eqn:T; simpl; auto; inversion H6;
-      destruct (ls @ (R src)); simpl; auto.
+      fold (ls @ (R src)); destruct (ls @ (R src)); simpl; auto.
   }
   exploit IHmv; eauto. eapply subst_loc_part_satisf_lowlong; eauto.
   destruct H3; InvBooleans. split; eauto using wt_setreg.
@@ -1966,7 +1983,7 @@ Opaque destroyed_by_op.
   {
     destruct H3. simpl in H5. InvBooleans.
     destruct (mreg_type dst) eqn:T; simpl; auto; inversion H6;
-      destruct (ls @ (R src)); simpl; auto.
+      fold (ls @ (R src)); destruct (ls @ (R src)); simpl; auto.
   }
   exploit IHmv; eauto. eapply subst_loc_part_satisf_highlong; eauto.
   destruct H3; InvBooleans. split; eauto using wt_setreg.
@@ -2239,7 +2256,7 @@ Proof.
     simpl in WTBB.
     destruct (is_move_operation op args') eqn:MOVE.
     - apply is_move_operation_correct in MOVE. destruct MOVE; subst. simpl in *.
-      inversion F. eapply Val.has_subtype; eauto. apply B1.
+      inversion F. eapply Val.has_subtype; eauto. fold (ls1 @ (R m0)). apply B1.
     - apply Val.has_subtype with (ty1 := snd (type_of_operation op)).
       destruct (type_of_operation op); simpl; auto.
       generalize (is_not_move_operation _ _ _ _ _ F MOVE); intros.
@@ -2745,7 +2762,9 @@ Proof.
   generalize (loc_result_caller_save (RTL.fn_sig f)).
   destruct (loc_result (RTL.fn_sig f)); simpl.
   intros A; unfold Locmap.get, return_regs; rewrite A; auto.
+  destruct (mreg_part r) eqn:Part; mreg_part_callee_save. auto.
   intros [A B]; unfold Locmap.get, return_regs; rewrite A, B; auto.
+  destruct (mreg_part rhi) eqn:HI, (mreg_part rlo) eqn:LO; mreg_part_callee_save; auto.
   apply return_regs_agree_callee_save.
   unfold proj_sig_res. rewrite <- H11; rewrite H13. apply WTRS.
 
@@ -2782,13 +2801,15 @@ Proof.
   apply wt_setpair; auto.
   econstructor; eauto.
   simpl. destruct (loc_result (ef_sig ef)) eqn:RES; simpl.
-  rewrite Locmap.gss; auto.
+  fold ((Locmap.set (R r) v' ls) @ (R r)). rewrite Locmap.gss; auto.
   generalize (loc_result_type (ef_sig ef)); intro SUBTYP.
   rewrite RES in SUBTYP; simpl in SUBTYP.
   exploit Val.has_subtype; eauto; intros.
   rewrite Val.load_result_same; auto.
   generalize (loc_result_pair (ef_sig ef)); rewrite RES; intros (A & B & C & D & E).
   exploit external_call_well_typed; eauto. unfold proj_sig_res; rewrite B. intros WTRES'.
+  fold ((Locmap.set (R rlo) (Val.loword v') (Locmap.set (R rhi) (Val.hiword v') ls)) @ (R rhi)).
+  fold ((Locmap.set (R rlo) (Val.loword v') (Locmap.set (R rhi) (Val.hiword v') ls)) @ (R rlo)).
   rewrite Locmap.gss, Locmap.gso, Locmap.gss by (red; auto using diff_sym).
   rewrite !Val.load_result_same, val_longofwords_eq_1; auto.
   eapply Val.has_subtype; eauto. destruct v'; simpl; auto.

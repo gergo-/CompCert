@@ -105,10 +105,22 @@ Lemma wt_setreg:
   Val.has_type v (mreg_type r) -> wt_locset ls -> wt_locset (Locmap.set (R r) v ls).
 Proof.
   intros; red; intros.
-  unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
-  destruct (Loc.diff_dec (R r) l). fold (ls @ l). auto.
+  destruct (Loc.diff_dec (R r) l). rewrite Locmap.gso; auto.
   destruct (Loc.eq (R r) l).
-  subst l. rewrite Val.load_result_same; auto. red. auto.
+  subst l. rewrite Locmap.gss. rewrite Val.load_result_same; auto.
+  destruct l as [s|]; simpl in n; try contradiction.
+  generalize (mreg_relation_cases r s); intros [EQ | [DIFF | [SUB | SUB]]]; try congruence.
+  - apply superreg_type_Tany64 in SUB. unfold Loc.type; rewrite SUB.
+    apply Val.has_type_Tany64.
+  - generalize (subreg_part_cases s r SUB); intros [[HI FULL] | [LO FULL]].
+    unfold Locmap.get, Locmap.set.
+    rewrite HI, pred_dec_false, pred_dec_true, FULL; auto using Loc.same_not_diff.
+    simpl. apply subreg_type_Tany32 in SUB. rewrite SUB.
+    apply Val.pair_hi_type.
+    unfold Locmap.get, Locmap.set.
+    rewrite LO, pred_dec_false, pred_dec_true, FULL; auto using Loc.same_not_diff.
+    simpl. apply subreg_type_Tany32 in SUB. rewrite SUB.
+    apply Val.pair_lo_type.
 Qed.
 
 Lemma wt_setstack:
@@ -116,13 +128,18 @@ Lemma wt_setstack:
   wt_locset ls -> wt_locset (Locmap.set (S sl ofs ty) v ls).
 Proof.
   intros; red; intros.
-  unfold Locmap.set, Locmap.get.
-  destruct (Loc.diff_dec (S sl ofs ty) l). fold (ls @ l). auto.
-  destruct (Loc.eq (S sl ofs ty) l).
-  subst l. simpl.
-  generalize (Val.load_result_type (chunk_of_type ty) v).
-  replace (type_of_chunk (chunk_of_type ty)) with ty. auto.
-  destruct ty; reflexivity. red. auto.
+  destruct l eqn:L.
+  - rewrite Locmap.gso. auto. simpl; auto.
+  - rewrite <- L.
+    destruct (Loc.diff_dec (S sl ofs ty) l). rewrite Locmap.gso; auto.
+    destruct (Loc.eq (S sl ofs ty) l).
+    + rewrite <- e. rewrite Locmap.gss. simpl.
+      generalize (Val.load_result_type (chunk_of_type ty) v).
+      replace (type_of_chunk (chunk_of_type ty)) with ty. auto.
+      destruct ty; reflexivity.
+    + unfold Locmap.get, Locmap.set.
+      subst l. rewrite pred_dec_false, dec_eq_false; auto.
+      simpl; auto.
 Qed.
 
 Lemma wt_undef_regs:
@@ -137,9 +154,10 @@ Proof.
   intros; red; intros. unfold call_regs, Locmap.get.
   destruct l. fold (ls @ (R r)). auto.
   destruct sl.
-  red; auto. fold (ls @ (S Outgoing pos ty)).
+  simpl; auto.
+  fold (ls @ (S Outgoing pos ty)).
   change (Loc.type (S Incoming pos ty)) with (Loc.type (S Outgoing pos ty)). auto.
-  red; auto.
+  simpl; auto.
 Qed.
 
 Lemma wt_return_regs:
@@ -148,13 +166,20 @@ Lemma wt_return_regs:
 Proof.
   intros; red; intros.
   unfold return_regs, wt_locset, Locmap.get in *.
-  destruct l; auto. destruct (is_callee_save r); auto.
+  generalize (H l); intro.
+  generalize (H0 l); intro.
+  destruct l; auto.
+  destruct (mreg_part r) as [|s|s]; auto.
+  destruct (is_callee_save r); auto.
+  destruct (is_callee_save s); auto.
+  destruct (is_callee_save s); auto.
 Qed.
 
 Lemma wt_init:
   wt_locset (Locmap.init Vundef).
 Proof.
-  red; intros. unfold Locmap.init, Locmap.get. red; auto.
+  red; intros. unfold Locmap.init, Locmap.get.
+  destruct l; try destruct r; simpl; auto.
 Qed.
 
 Lemma wt_setpair:
@@ -277,7 +302,8 @@ Local Opaque mreg_type.
 - (* getstack *)
   simpl in *; InvBooleans.
   econstructor; eauto.
-  eapply wt_setreg; eauto. eapply Val.has_subtype; eauto. apply WTRS.
+  eapply wt_setreg; eauto. eapply Val.has_subtype; eauto.
+  fold (rs @ (S sl ofs ty)). apply WTRS.
   apply wt_undef_regs; auto.
 - (* setstack *)
   simpl in *; InvBooleans.
@@ -288,7 +314,8 @@ Local Opaque mreg_type.
   + (* move *)
     InvBooleans. exploit is_move_operation_correct; eauto. intros [EQ1 EQ2]; subst.
     simpl in H. inv H.
-    econstructor; eauto. apply wt_setreg. eapply Val.has_subtype; eauto. apply WTRS.
+    econstructor; eauto. apply wt_setreg. eapply Val.has_subtype; eauto.
+    fold (rs @ (R src)). apply WTRS.
     apply wt_undef_regs; auto.
   + (* other ops *)
     destruct (type_of_operation op) as [ty_args ty_res] eqn:TYOP. InvBooleans.

@@ -314,9 +314,24 @@ Module Locmap.
 
   Definition init (x: val) : t := fun (_: loc) => EOne x.
 
+  Definition get_full (e: entry) : val := match e with EOne v => v end.
+  Definition get_high (e: entry) : val := match e with EOne v => Val.pair_hi v end.
+  Definition get_low  (e: entry) : val := match e with EOne v => Val.pair_lo v end.
+
+  Definition set_full (e: entry) (v': val): val := match e with EOne v => v' end.
+  Definition set_high (e: entry) (v': val): val := match e with EOne v => Val.pair_set_hi v v' end.
+  Definition set_low  (e: entry) (v': val): val := match e with EOne v => Val.pair_set_lo v v' end.
+
   Definition get (l: loc) (m: t) : val :=
-    match m l with
-    | EOne v => v
+    match l with
+    | R r =>
+      match mreg_part r with
+      | PFull r => get_full (m l)
+      | PHigh s => get_high (m (R s))
+      | PLow s  => get_low  (m (R s))
+      end
+    | S _ _ _ =>
+      get_full (m l)
     end.
 
   (* Auxiliary for some places where a function of type [loc -> val] is expected. *)
@@ -348,21 +363,58 @@ Module Locmap.
         m l'
       else
         match l with
-          | R r =>
-            EOne (set_reg_val r l' v)
-          | S _ _ _ =>
-            if Loc.eq l l' then
-              EOne (Val.load_result (chunk_of_type (Loc.type l)) v)
-            else
-              EOne Vundef
+        | R r =>
+          if Val.has_type_dec v (mreg_type r) then
+            match mreg_part r with
+            | PFull r => EOne (set_full (m (R r)) v)
+            | PHigh s => EOne (set_high (m (R s)) v)
+            | PLow s  => EOne (set_low  (m (R s)) v)
+            end
+          else
+            match mreg_part r with
+            | PFull r => EOne (set_full (m (R r)) Vundef)
+            | PHigh s => EOne (set_high (m (R s)) Vundef)
+            | PLow s  => EOne (set_low  (m (R s)) Vundef)
+            end
+        | S _ _ _ =>
+          if Loc.eq l l' then
+            EOne (Val.load_result (chunk_of_type (Loc.type l)) v)
+          else
+            EOne Vundef
         end.
   
   Lemma gss: forall l v m,
     get l (set l v m) = Val.load_result (chunk_of_type (Loc.type l)) v.
   Proof.
-    intros. unfold get, set, set_reg_val.
-    rewrite pred_dec_false; auto using Loc.same_not_diff.
-    destruct l; rewrite dec_eq_true; auto using Loc.same_not_diff.
+    intros. destruct l.
+    - simpl. destruct (mreg_part r) eqn:P.
+      + unfold get_full, set. rewrite P. apply full_is_eq in P; subst.
+        rewrite pred_dec_false; auto using Loc.same_not_diff.
+        destruct (Val.has_type_dec v (mreg_type r0)).
+        destruct (m (R r0)). rewrite Val.load_result_same; auto.
+        unfold set_full. destruct (m (R r0)).
+        destruct (mreg_type r0), v; simpl in *; auto; tauto.
+      + unfold get_high, set. rewrite pred_dec_false. rewrite P.
+        destruct (Val.has_type_dec v (mreg_type r)).
+        unfold set_high. destruct (m (R r0)).
+        rewrite Val.pair_set_hi_get_hi. rewrite Val.load_result_same; auto.
+        apply high_type_Tany32 in P; rewrite P in h; auto.
+        unfold set_high. destruct (m (R r0)).
+        rewrite Val.pair_set_hi_get_hi; simpl; auto.
+        destruct (mreg_type r), v; simpl in *; auto; tauto.
+        simpl. auto using subreg_not_diff, high_is_subreg.
+      + unfold get_low, set. rewrite pred_dec_false. rewrite P.
+        destruct (Val.has_type_dec v (mreg_type r)).
+        unfold set_low. destruct (m (R r0)).
+        rewrite Val.pair_set_lo_get_lo. rewrite Val.load_result_same; auto.
+        apply low_type_Tany32 in P; rewrite P in h; auto.
+        unfold set_low. destruct (m (R r0)).
+        rewrite Val.pair_set_lo_get_lo; simpl; auto.
+        destruct (mreg_type r), v; simpl in *; auto; tauto.
+        simpl. auto using subreg_not_diff, low_is_subreg.
+    - unfold get, set.
+      rewrite pred_dec_false; auto using Loc.same_not_diff.
+      rewrite dec_eq_true; auto.
   Qed.
 
   Lemma gss_reg: forall r v m, Val.has_type v (mreg_type r) -> get (R r) (set (R r) v m) = v.
@@ -375,10 +427,99 @@ Module Locmap.
     intros. rewrite gss. apply Val.load_result_same; auto.
   Qed.
 
-  Lemma gso: forall l v m p, Loc.diff l p -> get p (set l v m) = get p m.
+  Lemma gss_untyped: forall l v m, ~ Val.has_type v (Loc.type l) -> get l (set l v m) = Vundef.
+  Proof.
+    intros.
+    destruct l.
+    - unfold get, get_full, set.
+      destruct (mreg_part r) eqn:P.
+      + rewrite pred_dec_false, pred_dec_false by auto using Loc.same_not_diff.
+        destruct (m (R r0)); auto.
+      + generalize (high_is_subreg r r0 P); intro SUB.
+        rewrite pred_dec_false, pred_dec_false by (try apply subreg_not_diff; auto).
+        destruct (m (R r0)); simpl; rewrite Val.pair_set_hi_get_hi; simpl; auto.
+      + generalize (low_is_subreg r r0 P); intro SUB.
+        rewrite pred_dec_false, pred_dec_false by (try apply subreg_not_diff; auto).
+        destruct (m (R r0)); simpl; rewrite Val.pair_set_lo_get_lo; simpl; auto.
+    - unfold get, get_full, set.
+      rewrite pred_dec_false, dec_eq_true by auto using Loc.same_not_diff.
+      destruct ty, v; simpl in *; auto; tauto.
+  Qed.
+
+  Lemma gso_reg:
+    forall r s v m,
+    Loc.diff (R r) (R s) ->
+    get (R s) (set (R r) v m) = get (R s) m.
   Proof.
     intros. unfold get, set.
-    rewrite pred_dec_true; auto.
+    generalize (mreg_relation_cases r s); intros [EQ | [DIFF | [SUB | SUB]]].
+    - subst. apply Loc.same_not_diff in H; tauto.
+    - destruct (mreg_part s) eqn:P.
+      + rewrite pred_dec_true; auto.
+      + assert (subreg s r0) by auto using high_is_subreg.
+        generalize (subreg_part_cases s r0 H0); intros [[HI FULL] | [LO FULL]].
+        generalize (diff_high_cases _ _ _ DIFF HI); intros [DIFF' | LO'].
+        rewrite pred_dec_true; auto.
+        rewrite pred_dec_false.
+        rewrite LO'. destruct (Val.has_type_dec v (mreg_type r)).
+        destruct (m (R r0)); simpl. rewrite Val.pair_set_lo_get_hi; auto.
+        destruct (m (R r0)); simpl. rewrite Val.pair_set_lo_get_hi; auto.
+        apply low_is_subreg in LO'. simpl. auto using subreg_not_diff.
+        congruence.
+      + assert (subreg s r0) by auto using low_is_subreg.
+        generalize (subreg_part_cases s r0 H0); intros [[HI FULL] | [LO FULL]].
+        congruence.
+        generalize (diff_low_cases _ _ _ DIFF LO); intros [DIFF' | HI'].
+        rewrite pred_dec_true; auto.
+        rewrite pred_dec_false.
+        rewrite HI'. destruct (Val.has_type_dec v (mreg_type r)).
+        destruct (m (R r0)); simpl. rewrite Val.pair_set_hi_get_lo; auto.
+        destruct (m (R r0)); simpl. rewrite Val.pair_set_hi_get_lo; auto.
+        apply high_is_subreg in HI'. simpl. auto using subreg_not_diff.
+    - apply subreg_not_diff in SUB; contradiction.
+    - apply subreg_not_diff in SUB. contradict SUB. auto using diff_sym.
+  Qed.
+
+  Lemma gso: forall l v m p, Loc.diff l p -> get p (set l v m) = get p m.
+  Proof.
+    intros.
+    destruct l, p; auto using gso_reg; unfold get, set; rewrite pred_dec_true; auto.
+  Qed.
+
+  Lemma gs_subreg_cases:
+    forall r s v m,
+      subreg r s ->
+      Val.has_type v (mreg_type r) ->
+      (mreg_part r = PHigh s /\ get (R s) (set (R r) v m) = Val.pair_set_hi (get (R s) m) v \/
+       mreg_part r = PLow s  /\ get (R s) (set (R r) v m) = Val.pair_set_lo (get (R s) m) v).
+  Proof.
+    intros. destruct (subreg_part_cases r s H) as [[HI FULL] | [LO FULL]].
+    - left. split; auto.
+      unfold get, set, set_high.
+      rewrite FULL, pred_dec_false, pred_dec_true, HI by (simpl; auto using subreg_not_diff).
+      destruct (m (R s)); auto.
+    - right. split; auto.
+      unfold get, set, set_low.
+      rewrite FULL, pred_dec_false, pred_dec_true, LO by (simpl; auto using subreg_not_diff).
+      destruct (m (R s)); auto.
+  Qed.
+
+  Lemma gs_subreg_cases_untyped:
+    forall r s v m,
+    subreg r s ->
+    ~ Val.has_type v (mreg_type r) ->
+    (mreg_part r = PHigh s /\ get (R s) (set (R r) v m) = Val.pair_set_hi (get (R s) m) Vundef \/
+     mreg_part r = PLow s  /\ get (R s) (set (R r) v m) = Val.pair_set_lo (get (R s) m) Vundef).
+  Proof.
+    intros. destruct (subreg_part_cases r s H) as [[HI FULL] | [LO FULL]].
+    - left. split; auto.
+      unfold get, set, set_high.
+      rewrite FULL, pred_dec_false, pred_dec_false, HI by (simpl; auto using subreg_not_diff).
+      destruct (m (R s)); auto.
+    - right. split; auto.
+      unfold get, set, set_low.
+      rewrite FULL, pred_dec_false, pred_dec_false, LO by (simpl; auto using subreg_not_diff).
+      destruct (m (R s)); auto.
   Qed.
 
   Fixpoint undef (ll: list loc) (m: t) {struct ll} : t :=
@@ -393,14 +534,47 @@ Module Locmap.
     destruct H. rewrite IHll; auto. apply gso. apply Loc.diff_sym; auto.
   Qed.
 
+  Lemma gus_aux_reg:
+    forall r s m, get (R r) m = Vundef -> get (R r) (set (R s) Vundef m) = Vundef.
+  Proof.
+    intros.
+    destruct (mreg_relation_cases r s) as [EQ | [DIFF | [SUB | SUB]]].
+    - subst. rewrite gss. simpl. destruct (mreg_type s); auto.
+    - rewrite gso; simpl; auto using diff_sym.
+    - generalize (subreg_part_cases r s SUB); intros [[HI FULL] | [LO FULL]].
+      + unfold get, set.
+        rewrite HI, pred_dec_false, pred_dec_true; simpl; auto using same_not_diff.
+        rewrite FULL. unfold set_full. destruct (m (R s)). simpl; auto.
+      + unfold get, set.
+        rewrite LO, pred_dec_false, pred_dec_true; simpl; auto using same_not_diff.
+        rewrite FULL. unfold set_full. destruct (m (R s)). simpl; auto.
+    - generalize (subreg_part_cases s r SUB); intros [[HI FULL] | [LO FULL]].
+      + unfold get, set.
+        rewrite FULL, pred_dec_false, pred_dec_true; simpl; auto using subreg_not_diff.
+        unfold get in H. rewrite FULL in H. rewrite HI.
+        destruct (m (R r)). simpl in *. subst; auto.
+      + unfold get, set.
+        rewrite FULL, pred_dec_false, pred_dec_true; simpl; auto using subreg_not_diff.
+        unfold get in H. rewrite FULL in H. rewrite LO.
+        destruct (m (R r)). simpl in *. subst; auto.
+  Qed.
+
+  Lemma gus_aux:
+    forall l p m, get l m = Vundef -> get l (set p Vundef m) = Vundef.
+  Proof.
+    intros.
+    destruct l, p; auto using gus_aux_reg.
+    unfold get, set. unfold get in H.
+    destruct (Loc.diff_dec (S sl0 pos0 ty0) (S sl pos ty)); auto.
+    destruct (Loc.eq (S sl0 pos0 ty0) (S sl pos ty)); auto.
+    simpl. destruct (chunk_of_type ty0); auto.
+  Qed.
+
   Lemma gus: forall ll l m, In l ll -> get l (undef ll m) = Vundef.
   Proof.
     assert (P: forall ll l m, get l m = Vundef -> get l (undef ll m) = Vundef).
     { induction ll; simpl; intros. auto. apply IHll.
-      unfold get, set, set_reg_val.
-      destruct (Loc.diff_dec a l); auto.
-      destruct a eqn:A; rewrite <- A;
-        destruct (Loc.eq a l); try apply Val.load_result_same; simpl; auto. }
+      auto using gus_aux. }
     induction ll; simpl; intros. contradiction.
     destruct H. apply P. subst a. apply gss_typed. exact I.
     auto.

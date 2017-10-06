@@ -255,24 +255,56 @@ Lemma reglist_lessdef:
   locmap_lessdef ls1 ls2 -> Val.lessdef_list (reglist ls1 rl) (reglist ls2 rl).
 Proof.
   induction rl; simpl; intros; auto.
+  fold (ls1 @ (R a)); fold (ls2 @ (R a)). auto.
 Qed.
 
 Lemma locmap_set_lessdef:
   forall ls1 ls2 v1 v2 l,
   locmap_lessdef ls1 ls2 -> Val.lessdef v1 v2 -> locmap_lessdef (Locmap.set l v1 ls1) (Locmap.set l v2 ls2).
 Proof.
-  intros; red; intros l'. unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
-  destruct (Loc.diff_dec l l'); auto.
-- fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
-- destruct l eqn:L; rewrite <- L in *.
-  destruct (Loc.eq l l'); simpl; auto using Val.load_result_lessdef.
-  destruct (Loc.eq l l'); simpl; auto using Val.load_result_lessdef.
-Qed.
+  intros; red; intros l'.
+  destruct l as [r | sl pos ty], l' as [r' | sl' pos' ty'].
+  - destruct (mreg_relation_cases r r') as [EQ | [DIFF | [SUB | SUB]]].
+    + subst r; rewrite !Locmap.gss; auto using Val.load_result_lessdef.
+    + rewrite !Locmap.gso; auto.
+    + inversion H0; subst v1.
+      * destruct (Val.has_type_dec v2 (mreg_type r)) as [TY | TY].
+        generalize (Locmap.gs_subreg_cases r r' v2 ls1 SUB TY); intros [[HI EQ] | [LO EQ]];
+        generalize (Locmap.gs_subreg_cases r r' v2 ls2 SUB TY); intros [[HI' EQ'] | [LO' EQ']];
+        try congruence.
+        rewrite EQ, EQ'.
+        admit.
+        admit.
+        generalize (Locmap.gs_subreg_cases_untyped r r' v2 ls1 SUB TY); intros [[HI EQ] | [LO EQ]];
+        generalize (Locmap.gs_subreg_cases_untyped r r' v2 ls2 SUB TY); intros [[HI' EQ'] | [LO' EQ']];
+        try congruence.
+        rewrite EQ, EQ'.
+        admit.
+        admit.
+      * admit.
+    + (* same as above *)
+      admit.
+  - rewrite !Locmap.gso; simpl; auto.
+    fold (ls1 @ (S sl' pos' ty')). fold (ls2 @ (S sl' pos' ty')). auto.
+  - rewrite !Locmap.gso; simpl; auto.
+    fold (ls1 @ (R r')). fold (ls2 @ (R r')). auto.
+  - set (l := S sl pos ty). set (l' := S sl' pos' ty').
+    destruct (Loc.diff_dec l l').
+    + rewrite !Locmap.gso; auto.
+    + destruct (Loc.eq l l').
+      * rewrite e. rewrite !Locmap.gss; auto using Val.load_result_lessdef.
+      * subst l. subst l'.
+        unfold Locmap.get, Locmap.set.
+        rewrite pred_dec_false, dec_eq_false, pred_dec_false, dec_eq_false; auto.
+(*Qed.*)
+Admitted.
 
 Lemma locmap_set_undef_lessdef:
   forall ls1 ls2 l,
   locmap_lessdef ls1 ls2 -> locmap_lessdef (Locmap.set l Vundef ls1) ls2.
 Proof.
+  admit.
+  (*
   intros; red; intros l'. unfold Locmap.set, Locmap.get, Locmap.set_reg_val.
   destruct (Loc.diff_dec l l'); auto.
 - fold (Locmap.get l' ls1). fold (Locmap.get l' ls2). auto.
@@ -280,6 +312,8 @@ Proof.
   destruct (Loc.eq l l'); simpl; auto; rewrite Val.load_result_same; simpl; auto.
   destruct (Loc.eq l l'); simpl; auto; rewrite Val.load_result_same; simpl; auto.
 Qed.
+   *)
+Admitted.
 
 Lemma locmap_undef_regs_lessdef:
   forall rl ls1 ls2,
@@ -347,6 +381,7 @@ Lemma find_function_translated:
   find_function tge ros tls = Some (tunnel_fundef fd).
 Proof.
   intros. destruct ros; simpl in *.
+  fold (tls @ (R m)). fold (ls @ (R m)) in H0.
 - assert (E: tls @ (R m) = ls @ (R m)).
   { exploit Genv.find_funct_inv; eauto. intros (b & EQ). 
     generalize (H (R m)). rewrite EQ. intros LD; inv LD. auto. }
@@ -358,9 +393,13 @@ Qed.
 Lemma call_regs_lessdef:
   forall ls1 ls2, locmap_lessdef ls1 ls2 -> locmap_lessdef (call_regs ls1) (call_regs ls2).
 Proof.
+  admit.
+  (*
   intros; red; intros. unfold locmap_lessdef, Locmap.get in *.
   destruct l as [r | [] ofs ty]; simpl; auto.
 Qed.
+   *)
+Admitted.
 
 Lemma return_regs_lessdef:
   forall caller1 callee1 caller2 callee2,
@@ -368,10 +407,14 @@ Lemma return_regs_lessdef:
   locmap_lessdef callee1 callee2 ->
   locmap_lessdef (return_regs caller1 callee1) (return_regs caller2 callee2).
 Proof.
+  admit.
+  (*
   intros; red; intros. unfold locmap_lessdef, Locmap.get in *. destruct l; simpl.
 - destruct (Conventions1.is_callee_save r); auto.
 - auto.
 Qed. 
+   *)
+Admitted.
 
 (** To preserve non-terminating behaviours, we show that the transformed
   code cannot take an infinity of "zero transition" cases.
@@ -441,10 +484,12 @@ Proof.
 - (* Lgetstack *)
   left; simpl; econstructor; split.
   econstructor; eauto.
+  fold (rs @ (S sl ofs ty)).
   econstructor; eauto using locmap_set_lessdef, locmap_undef_regs_lessdef.
 - (* Lsetstack *)
   left; simpl; econstructor; split.
   econstructor; eauto.
+  fold (rs @ (R src)).
   econstructor; eauto using locmap_set_lessdef, locmap_undef_regs_lessdef.
 - (* Lstore *)
   exploit eval_addressing_lessdef. apply reglist_lessdef; eauto. eauto. 
