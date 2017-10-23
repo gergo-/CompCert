@@ -550,7 +550,8 @@ Lemma decode_encode_undef:
   forall chunk1 chunk2,
   decode_val chunk1 (encode_val chunk2 Vundef) = Vundef.
 Proof.
-  intros. destruct chunk1, chunk2; simpl; auto.
+  intros. unfold decode_val.
+  destruct chunk1, chunk2, Archi.ptr64; simpl; auto.
 Qed.
 
 Lemma decode_val_type:
