@@ -42,7 +42,8 @@ Record bounds : Type := mkbounds {
   bound_outgoing_pos: bound_outgoing >= 0;
   bound_stack_data_pos: bound_stack_data >= 0;
   used_callee_save_norepet: list_norepet used_callee_save;
-  used_callee_save_prop: forall r, In r used_callee_save -> is_callee_save r = true
+  used_callee_save_prop: forall r, In r used_callee_save -> is_callee_save r = true;
+  used_callee_save_containing_reg: forall r, In r used_callee_save -> r = containing_reg r
 }.
 
 (** The following predicates define the correctness of a set of bounds
@@ -53,7 +54,7 @@ Section WITHIN_BOUNDS.
 Variable b: bounds.
 
 Definition mreg_within_bounds (r: mreg) :=
-  is_callee_save r = true -> In r (used_callee_save b).
+  is_callee_save r = true -> In (containing_reg r) (used_callee_save b).
 
 Definition slot_within_bounds (sl: slot) (ofs: Z) (q: quantity) :=
   match sl with
@@ -90,7 +91,7 @@ Section BOUNDS.
 Variable f: function.
 
 Definition record_reg (u: RegSet.t) (r: mreg) : RegSet.t :=
-  if is_callee_save r then RegSet.add r u else u.
+  if is_callee_save r then RegSet.add (containing_reg r) u else u.
 
 Definition record_regs (u: RegSet.t) (rl: list mreg) : RegSet.t :=
   fold_left record_reg rl u.
@@ -201,7 +202,12 @@ Lemma record_reg_only: forall u r, only_callee_saves u -> only_callee_saves (rec
 Proof.
   unfold only_callee_saves, record_reg; intros.
   destruct (is_callee_save r) eqn:CS; auto.
-  destruct (mreg_eq r r0). congruence. apply H; eapply RegSet.add_3; eauto.
+  destruct (mreg_eq r0 (containing_reg r)). subst; auto.
+  generalize (containing_reg_charact r); intros [EQ | SUB].
+  rewrite <- EQ; auto.
+  generalize (subreg_callee_save r (containing_reg r) SUB); intros.
+  rewrite <- H1; auto.
+  apply RegSet.add_3 in H0; auto.
 Qed.
 
 Lemma record_regs_only: forall rl u, only_callee_saves u -> only_callee_saves (record_regs u rl).
@@ -220,6 +226,44 @@ Proof.
   intros. unfold record_regs_of_function.
   apply fold_left_preserves. apply record_regs_of_instr_only.
   red; intros. eelim RegSet.empty_1; eauto.
+Qed.
+
+Definition containing_regs_only (u: RegSet.t) : Prop :=
+  forall r, RegSet.In r u -> r = containing_reg r.
+
+Lemma record_reg_containing_only:
+  forall r u, containing_regs_only u -> containing_regs_only (record_reg u r).
+Proof.
+  unfold containing_regs_only, record_reg; intros.
+  destruct (is_callee_save r) eqn:CS; eauto.
+  destruct (mreg_eq r0 (containing_reg r)). subst; auto.
+  rewrite containing_reg_idempotent; auto.
+  apply RegSet.add_3 in H0; auto.
+Qed.
+
+Lemma record_regs_containing_only:
+  forall rl u, containing_regs_only u -> containing_regs_only (record_regs u rl).
+Proof.
+  intros. unfold record_regs. apply fold_left_preserves; auto using record_reg_containing_only.
+Qed.
+
+Lemma record_regs_of_instr_containing_only:
+  forall u i, containing_regs_only u -> containing_regs_only (record_regs_of_instr u i).
+Proof.
+  intros. destruct i; simpl; auto using record_reg_containing_only, record_regs_containing_only.
+Qed.
+
+Lemma record_regs_of_function_containing_only:
+  containing_regs_only record_regs_of_function.
+Proof.
+  intros. unfold record_regs_of_function.
+  apply fold_left_preserves. apply record_regs_of_instr_containing_only.
+  red; intros. eelim RegSet.empty_1; eauto.
+Qed.
+
+Lemma in_elements_in_regset: forall r s, In r (RegSet.elements s) -> RegSet.In r s.
+Proof.
+  intros. apply RegSet.elements_2. apply InA_alt. exists r; auto.
 Qed.
 
 Program Definition function_bounds := {|
@@ -248,6 +292,10 @@ Next Obligation.
   apply record_regs_of_function_only. apply RegSet.elements_2.
   apply InA_alt. exists r; auto.
 Qed.
+Next Obligation.
+  apply record_regs_of_function_containing_only. apply RegSet.elements_2.
+  apply InA_alt. exists r; auto.
+Qed.
 
 (** We now show the correctness of the inferred bounds. *)
 
@@ -256,7 +304,7 @@ Proof.
   unfold record_reg; intros. destruct (is_callee_save r); auto. apply RegSet.add_2; auto.
 Qed.
 
-Lemma record_reg_ok: forall u r, is_callee_save r = true -> RegSet.In r (record_reg u r).
+Lemma record_reg_ok: forall u r, is_callee_save r = true -> RegSet.In (containing_reg r) (record_reg u r).
 Proof.
   unfold record_reg; intros. rewrite H. apply RegSet.add_1; auto.
 Qed.
@@ -266,7 +314,7 @@ Proof.
   intros. unfold record_regs. apply fold_left_preserves; auto using record_reg_incr.
 Qed.
 
-Lemma record_regs_ok: forall r rl u, In r rl -> is_callee_save r = true -> RegSet.In r (record_regs u rl).
+Lemma record_regs_ok: forall r rl u, In r rl -> is_callee_save r = true -> RegSet.In (containing_reg r) (record_regs u rl).
 Proof.
   intros. unfold record_regs. eapply fold_left_ensures; eauto using record_reg_incr, record_reg_ok.
 Qed.
@@ -285,14 +333,14 @@ Definition defined_by_instr (r': mreg) (i: instruction) :=
   | _ => False
   end.
 
-Lemma record_regs_of_instr_ok: forall r' u i, defined_by_instr r' i -> is_callee_save r' = true -> RegSet.In r' (record_regs_of_instr u i).
+Lemma record_regs_of_instr_ok: forall r' u i, defined_by_instr r' i -> is_callee_save r' = true -> RegSet.In (containing_reg r') (record_regs_of_instr u i).
 Proof.
   intros. destruct i; simpl in *; try contradiction; subst; auto using record_reg_ok.
   destruct H; auto using record_regs_incr, record_regs_ok.
 Qed.
 
 Lemma record_regs_of_function_ok:
-  forall r i, In i f.(fn_code) -> defined_by_instr r i -> is_callee_save r = true -> RegSet.In r record_regs_of_function.
+  forall r i, In i f.(fn_code) -> defined_by_instr r i -> is_callee_save r = true -> RegSet.In (containing_reg r) record_regs_of_function.
 Proof.
   intros. unfold record_regs_of_function.
   eapply fold_left_ensures; eauto using record_regs_of_instr_incr, record_regs_of_instr_ok.
@@ -377,6 +425,26 @@ Proof.
   exploit record_regs_of_function_ok; eauto. intros.
   apply RegSet.elements_1 in H2. rewrite InA_alt in H2. destruct H2 as (r' & A & B).
   subst r'; auto.
+Qed.
+
+Corollary mreg_within_bounds_diff:
+  forall r1 r2,
+  mreg_within_bounds function_bounds r1 ->
+  ~ mreg_within_bounds function_bounds r2 ->
+  mreg_diff r1 r2.
+Proof.
+  intros.
+  unfold mreg_diff. split; contradict H0. subst; auto.
+  unfold mreg_within_bounds in *; simpl in *. intros.
+  destruct H0 as [SUB | SUB].
+  generalize (subreg_callee_save r1 r2 SUB); intros.
+  apply subreg_of_containing_reg in SUB; subst.
+  rewrite containing_reg_idempotent. apply H.
+  congruence.
+  generalize (subreg_callee_save r2 r1 SUB); intros.
+  apply subreg_of_containing_reg in SUB; subst.
+  rewrite containing_reg_idempotent in H. apply H.
+  congruence.
 Qed.
 
 Lemma slot_is_within_bounds:

@@ -1725,14 +1725,13 @@ Proof.
   destruct res, res'; simpl in *; inv H.
 - apply parallel_assignment_satisf with (k := Full); auto.
   unfold reg_loc_unconstrained. rewrite H0 by auto. rewrite H1 by auto. auto.
-- set (e' := remove_equation {| ekind := High; ereg := x; eloc := R hi |} e0) in *.
+- MonadInv. red; intros.
+  set (e' := remove_equation {| ekind := High; ereg := x; eloc := R hi |} e0) in *.
   set (e'' := remove_equation {| ekind := Low; ereg := x; eloc := R lo |} e') in *.
-  red; intros.
   assert (subtype Tint (mreg_type hi) = true /\
-          subtype Tint (mreg_type lo) = true /\
-          lo <> hi /\ e'' = e1).
-  { destruct (typ_eq (env x) Tlong), (mreg_eq hi lo), (mreg_type hi), (mreg_type lo);
-      try inversion H6; auto. }
+          subtype Tint (mreg_type lo) = true).
+  { destruct (typ_eq (env x) Tlong), (mreg_type hi), (mreg_type lo);
+      try inversion e1; try rewrite e; auto. }
   decompose [and] H4. decompose [and] H5; subst.
   fold (Locmap.set (R hi) (Val.hiword v') ls).
   fold (Locmap.set (R lo) (Val.loword v') (Locmap.set (R hi) (Val.hiword v') ls)).
@@ -1740,7 +1739,7 @@ Proof.
   subst q. rewrite Regmap.gss.
   rewrite Locmap.gss, Val.load_result_same; auto. apply Val.loword_lessdef; auto.
   destruct (OrderedEquation.eq_dec q (Eq High x (R hi))).
-  subst q. rewrite Regmap.gss. rewrite Locmap.gso by (red; auto).
+  subst q. rewrite Regmap.gss. rewrite Locmap.gso by (simpl; auto using diff_sym).
   rewrite Locmap.gss, Val.load_result_same; auto. apply Val.hiword_lessdef; auto.
   assert (EqSet.In q e'').
   { unfold e'', e', remove_equation; simpl; ESD.fsetdec. }
@@ -2748,23 +2747,19 @@ Proof.
   rewrite RES in SUBTYP; simpl in SUBTYP.
   exploit Val.has_subtype; eauto; intros.
   rewrite Val.load_result_same; auto.
-
   generalize (loc_result_pair (ef_sig ef)); rewrite RES; intros (A & B & C & D & E).
   exploit external_call_well_typed; eauto. unfold proj_sig_res; rewrite B. intros WTRES'.
   unfold Locmap.getpair, map_rpair, Locmap.setpair.
-  rewrite Locmap.gss. rewrite Locmap.gso by (red; auto). rewrite Locmap.gss.
-
-  generalize (loc_result_type (ef_sig ef)); intro SUBTYP.
-  rewrite RES in SUBTYP; simpl in SUBTYP.
-  rewrite !Val.load_result_same.
-  rewrite val_longofwords_eq_1 by auto. auto.
+  rewrite Locmap.gss, Locmap.gso, Locmap.gss by (simpl; auto using diff_sym).
+  rewrite !Val.load_result_same, val_longofwords_eq_1; auto.
   eapply Val.has_subtype; eauto. destruct v'; simpl; auto.
   eapply Val.has_subtype; eauto. destruct v'; simpl; auto.
-
   red; intros. rewrite (AG l H0).
   symmetry; apply Locmap.gpo.
   assert (X: forall r, is_callee_save r = false -> Loc.diff l (R r)).
-  { intros. destruct l; simpl in *. congruence. auto. }
+  { intros. destruct l; simpl in *; auto.
+    destruct (mreg_diff_dec r0 r); auto.
+    apply callee_caller_save_diff. congruence. }
   generalize (loc_result_caller_save (ef_sig ef)). destruct (loc_result (ef_sig ef)); simpl; intuition auto.
   eapply external_call_well_typed; eauto.
 

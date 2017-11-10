@@ -268,7 +268,10 @@ Proof.
   intros; red; destruct l; unfold Locmap.get.
 - destruct (mreg_eq r r0).
   + subst. rewrite !Regfile.gss. auto using Val.load_result_lessdef.
-  + rewrite !Regfile.gso; auto. exact (H (R r0)).
+  + destruct (mreg_overlap_dec r0 r).
+    * rewrite Regfile.gu_overlap; auto.
+    * rewrite !Regfile.gso; auto using not_same_not_overlap_diff.
+      exact (H (R r0)).
 - exact (H (S sl pos q)).
 Qed.
 
@@ -305,7 +308,10 @@ Proof.
 - destruct (mreg_eq r r').
   + subst; rewrite Regfile.gss; auto.
     destruct (Regfile.chunk_of_mreg r'); simpl; auto.
-  + rewrite Regfile.gso; auto. exact (H (R r')).
+  + destruct (mreg_overlap_dec r' r).
+    * rewrite Regfile.gu_overlap; auto.
+    * rewrite Regfile.gso; auto using not_same_not_overlap_diff.
+      exact (H (R r')).
 - exact (H (S sl pos q)).
 Qed.
 

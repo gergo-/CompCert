@@ -178,8 +178,8 @@ Separate Extraction
    Machregs.mregs_for_operation Machregs.mregs_for_builtin
    Machregs.two_address_op Machregs.is_stack_reg
    Machregs.destroyed_at_indirect_call
-   Machregs.subregs Machregs.superregs
    Machregs.regclass Machregs.regclass_of_type Machregs.regclass_interference
+   Registerfile.subreg_list Registerfile.superreg_list
    AST.signature_main
    Floats.Float32.from_parsed Floats.Float.from_parsed
    Globalenvs.Senv.invert_symbol

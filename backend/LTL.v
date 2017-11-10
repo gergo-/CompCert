@@ -374,12 +374,18 @@ Proof.
   intros. destruct l, caller, callee.
   - unfold Locmap.get, return_regs, return_regs_spec.
     destruct (In_dec mreg_eq r destroyed_at_call).
-    + rewrite Regfile.override_in; auto.
+    + admit.
+      (*
+      rewrite Regfile.override_in; auto.
       rewrite (in_destroyed_at_call r); auto.
-    + rewrite Regfile.override_notin; auto.
+*)
+    + admit.
+      (*
+      rewrite Regfile.override_notin; auto.
       rewrite (notin_destroyed_at_call r); auto.
+*)
   - auto.
-Qed.
+Admitted.
 
 Lemma LTL_undef_regs_Regfile_undef_regs:
   forall rl rf stack, undef_regs rl (rf, stack) = (Regfile.undef_regs rl rf, stack).

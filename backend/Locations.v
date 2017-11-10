@@ -163,7 +163,7 @@ Module Loc.
   Definition diff (l1 l2: loc) : Prop :=
     match l1, l2 with
     | R r1, R r2 =>
-        r1 <> r2
+        mreg_diff r1 r2
     | S s1 d1 q1, S s2 d2 q2 =>
         s1 <> s2 \/ d1 + typesize (typ_of_quantity q1) <= d2 \/ d2 + typesize (typ_of_quantity q2) <= d1
     | _, _ =>
@@ -174,6 +174,7 @@ Module Loc.
     forall l, ~(diff l l).
   Proof.
     destruct l; unfold diff; auto.
+    apply Registerfile.same_not_diff.
     red; intros. destruct H; auto. generalize (typesize_pos (typ_of_quantity q)); omega.
   Qed.
 
@@ -187,13 +188,14 @@ Module Loc.
     forall l1 l2, diff l1 l2 -> diff l2 l1.
   Proof.
     destruct l1; destruct l2; unfold diff; auto.
+    apply Registerfile.diff_sym.
     intuition.
   Qed.
 
   Definition diff_dec (l1 l2: loc) : { Loc.diff l1 l2 } + { ~Loc.diff l1 l2 }.
   Proof.
     intros. destruct l1; destruct l2; simpl.
-  - destruct (mreg_eq r r0). right; tauto. left; auto.
+  - apply mreg_diff_dec.
   - left; auto.
   - left; auto.
   - destruct (slot_eq sl sl0).
@@ -392,7 +394,7 @@ Module Locmap.
   Proof.
     intros.
     destruct l, m.
-    destruct p; simpl in H; auto. apply Regfile.gso; auto.
+    destruct p; simpl in H; auto. apply Regfile.gso; auto using Registerfile.diff_sym.
     unfold get, set. destruct (Loc.eq (S sl pos q) p).
     subst p. elim (Loc.same_not_diff _ H).
     destruct (Loc.diff_dec (S sl pos q) p).
@@ -416,16 +418,25 @@ Module Locmap.
   Proof.
     assert (P: forall ll l m, get l m = Vundef -> get l (undef ll m) = Vundef).
     { induction ll; simpl; intros. auto. apply IHll.
+      destruct (Loc.diff_dec a l).
+      rewrite gso; auto.
       destruct (Loc.eq a l). subst; apply gss_typed. simpl; auto.
       destruct a, l, m; simpl in n.
-      simpl. rewrite Regfile.gso; auto; congruence.
-      rewrite gso; simpl; auto.
-      rewrite gso; simpl; auto.
-      unfold get, set. rewrite dec_eq_false; auto.
+      simpl. rewrite Regfile.gu_overlap; auto.
+      apply mreg_overlap_sym. apply not_same_not_diff_overlap; congruence.
+      auto. auto. unfold get, set. rewrite dec_eq_false; auto.
       destruct (Loc.diff_dec (S sl pos q) (S sl0 pos0 q0)). auto. apply decode_encode_undef. }
     induction ll; simpl; intros. contradiction.
     destruct H. apply P. subst a. apply gss_typed. exact I.
     auto.
+  Qed.
+
+  Lemma gu_overlap:
+    forall r s v m,
+    mreg_overlap r s ->
+    get (R r) (set (R s) v m) = Vundef.
+  Proof.
+    intros; simpl. destruct m. auto using Regfile.gu_overlap.
   Qed.
 
   Definition getpair (p: rpair loc) (m: t) : val :=
@@ -521,7 +532,7 @@ Module OrderedLoc <: OrderedType.
   Definition eq (x y: t) := x = y.
   Definition lt (x y: t) :=
     match x, y with
-    | R r1, R r2 => Plt (IndexedMreg.index r1) (IndexedMreg.index r2)
+    | R r1, R r2 => OrderedMreg.lt r1 r2
     | R _, S _ _ _ => True
     | S _ _ _, R _ => False
     | S sl1 ofs1 q1, S sl2 ofs2 q2 =>
@@ -584,13 +595,13 @@ Module OrderedLoc <: OrderedType.
 
   Definition diff_low_bound (l: loc) : loc :=
     match l with
-    | R mr => l
+    | R mr => R (OrderedMreg.diff_low_bound mr)
     | S sl ofs q => S sl (ofs - 1) Q64
     end.
 
   Definition diff_high_bound (l: loc) : loc :=
     match l with
-    | R mr => l
+    | R mr => R (OrderedMreg.diff_high_bound mr)
     | S sl ofs q => S sl (ofs + typesize (typ_of_quantity q) - 1) Q64
     end.
 
@@ -599,11 +610,9 @@ Module OrderedLoc <: OrderedType.
   Proof.
     intros.
     destruct l as [mr | sl ofs q]; destruct l' as [mr' | sl' ofs' q']; simpl in *; auto.
-    - assert (IndexedMreg.index mr <> IndexedMreg.index mr').
-      { destruct H. apply not_eq_sym. apply Plt_ne; auto. apply Plt_ne; auto. }
-      congruence.
-    - assert (RANGE: forall q, 1 <= typesize q <= 2).
-      { intros; unfold typesize. destruct q0; omega.  }
+    - auto using OrderedMreg.outside_interval_diff.
+    - assert (RANGE: forall ty, 1 <= typesize ty <= 2).
+      { intros; unfold typesize. destruct ty; omega.  }
       destruct H.
       + destruct H. left. apply not_eq_sym. apply OrderedSlot.lt_not_eq; auto.
         destruct H. right.
@@ -623,10 +632,7 @@ Module OrderedLoc <: OrderedType.
   Proof.
     intros.
     destruct l as [mr | sl ofs q]; destruct l' as [mr' | sl' ofs' q']; simpl in *; auto.
-    - unfold Plt, Pos.lt. destruct (Pos.compare (IndexedMreg.index mr) (IndexedMreg.index mr')) eqn:C.
-      elim H. apply IndexedMreg.index_inj. apply Pos.compare_eq_iff. auto.
-      auto.
-      rewrite Pos.compare_antisym. rewrite C. auto.
+    - auto using OrderedMreg.diff_outside_interval.
     - destruct (OrderedSlot.compare sl sl'); auto.
       destruct H. contradiction.
       destruct H.

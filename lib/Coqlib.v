@@ -1255,6 +1255,12 @@ Proof.
   destruct l; simpl; auto.
 Qed.
 
+Lemma list_drop_all:
+  forall (A: Type) (l: list A), list_drop (length l) l = nil.
+Proof.
+  induction l; simpl; auto.
+Qed.
+
 (** A list of [n] elements, all equal to [x]. *)
 
 Fixpoint list_repeat {A: Type} (n: nat) (x: A) {struct n} :=

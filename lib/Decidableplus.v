@@ -99,6 +99,13 @@ Next Obligation.
   apply Pos.eqb_eq.
 Qed.
 
+Program Instance Decidable_lt_positive : forall (x y : positive), Decidable (Plt x y) := {
+  Decidable_witness := Pos.ltb x y
+}.
+Next Obligation.
+  apply Pos.ltb_lt.
+Qed.
+
 Program Instance Decidable_eq_Z : forall (x y : Z), Decidable (eq x y) := {
   Decidable_witness := Z.eqb x y
 }.

@@ -91,46 +91,46 @@ Definition mreg_type (r: mreg): typ :=
   | D8  | D9  | D10 | D11 | D12 | D13 | D14 | D15 => Tany64
   end.
 
-Definition subregs (r: mreg): list mreg :=
+Definition subregs (r: mreg): option (mreg * mreg) :=
   match r with
-  | D0  => S0 :: S1 :: nil
-  | D1  => S2 :: S3 :: nil
-  | D2  => S4 :: S5 :: nil
-  | D3  => S6 :: S7 :: nil
-  | D4  => S8 :: S9 :: nil
-  | D5  => S10 :: S11 :: nil
-  | D6  => S12 :: S13 :: nil
-  | D7  => S14 :: S15 :: nil
-  | D8  => S16 :: S17 :: nil
-  | D9  => S18 :: S19 :: nil
-  | D10 => S20 :: S21 :: nil
-  | D11 => S22 :: S23 :: nil
-  | D12 => S24 :: S25 :: nil
-  | D13 => S26 :: S27 :: nil
-  | D14 => S28 :: S29 :: nil
-  | D15 => S30 :: S31 :: nil
-  | _ => nil
+  | D0  => Some ( S0,  S1)
+  | D1  => Some ( S2,  S3)
+  | D2  => Some ( S4,  S5)
+  | D3  => Some ( S6,  S7)
+  | D4  => Some ( S8,  S9)
+  | D5  => Some (S10, S11)
+  | D6  => Some (S12, S13)
+  | D7  => Some (S14, S15)
+  | D8  => Some (S16, S17)
+  | D9  => Some (S18, S19)
+  | D10 => Some (S20, S21)
+  | D11 => Some (S22, S23)
+  | D12 => Some (S24, S25)
+  | D13 => Some (S26, S27)
+  | D14 => Some (S28, S29)
+  | D15 => Some (S30, S31)
+  | _ => None
   end.
 
-Definition superregs (r: mreg): list mreg :=
+Definition superregs (r: mreg): option mreg :=
   match r with
-  | S0  | S1  => D0 :: nil
-  | S2  | S3  => D1 :: nil
-  | S4  | S5  => D2 :: nil
-  | S6  | S7  => D3 :: nil
-  | S8  | S9  => D4 :: nil
-  | S10 | S11 => D5 :: nil
-  | S12 | S13 => D6 :: nil
-  | S14 | S15 => D7 :: nil
-  | S16 | S17 => D8 :: nil
-  | S18 | S19 => D9 :: nil
-  | S20 | S21 => D10 :: nil
-  | S22 | S23 => D11 :: nil
-  | S24 | S25 => D12 :: nil
-  | S26 | S27 => D13 :: nil
-  | S28 | S29 => D14 :: nil
-  | S30 | S31 => D15 :: nil
-  | _ => nil
+  | S0  | S1  => Some D0
+  | S2  | S3  => Some D1
+  | S4  | S5  => Some D2
+  | S6  | S7  => Some D3
+  | S8  | S9  => Some D4
+  | S10 | S11 => Some D5
+  | S12 | S13 => Some D6
+  | S14 | S15 => Some D7
+  | S16 | S17 => Some D8
+  | S18 | S19 => Some D9
+  | S20 | S21 => Some D10
+  | S22 | S23 => Some D11
+  | S24 | S25 => Some D12
+  | S26 | S27 => Some D13
+  | S28 | S29 => Some D14
+  | S30 | S31 => Some D15
+  | _ => None
   end.
 
 (** Architecture-specific mapping from data types to register classes. *)
@@ -167,25 +167,32 @@ Module IndexedMreg <: INDEXED_TYPE.
     | R8  => 18 | R9 => 20 | R10 => 22 | R11 => 24
     | R12 => 26
 
-    | D0  => 28 | D1  => 30 | D2  => 32 | D3  => 34
-    | D4  => 36 | D5  => 38 | D6  => 40 | D7  => 42
-    | D8  => 44 | D9  => 46 | D10 => 48 | D11 => 50
-    | D12 => 52 | D13 => 54 | D14 => 56 | D15 => 58
-
-    | S0  =>  60 | S1  =>  62 | S2  =>  64 | S3  =>  66
-    | S4  =>  68 | S5  =>  70 | S6  =>  72 | S7  =>  74
-    | S8  =>  76 | S9  =>  78 | S10 =>  80 | S11 =>  82
-    | S12 =>  84 | S13 =>  86 | S14 =>  88 | S15 =>  90
-    | S16 =>  92 | S17 =>  94 | S18 =>  96 | S19 =>  98
-    | S20 => 100 | S21 => 102 | S22 => 104 | S23 => 106
-    | S24 => 108 | S25 => 110 | S26 => 112 | S27 => 114
-    | S28 => 116 | S29 => 118 | S30 => 120 | S31 => 122
+    (* For the purposes of the ordering defined in [Registerfile], every double
+       register's index must be between its subregisters' indices. *)
+    | S0  => 30 | D0  => 31 | S1  => 32
+    | S2  => 33 | D1  => 34 | S3  => 35
+    | S4  => 36 | D2  => 37 | S5  => 38
+    | S6  => 39 | D3  => 40 | S7  => 41
+    | S8  => 42 | D4  => 43 | S9  => 44
+    | S10 => 45 | D5  => 46 | S11 => 47
+    | S12 => 48 | D6  => 49 | S13 => 50
+    | S14 => 51 | D7  => 52 | S15 => 53
+    | S16 => 54 | D8  => 55 | S17 => 56
+    | S18 => 57 | D9  => 58 | S19 => 59
+    | S20 => 60 | D10 => 61 | S21 => 62
+    | S22 => 63 | D11 => 64 | S23 => 65
+    | S24 => 66 | D12 => 67 | S25 => 68
+    | S26 => 69 | D13 => 70 | S27 => 71
+    | S28 => 72 | D14 => 73 | S29 => 74
+    | S30 => 75 | D15 => 76 | S31 => 77
     end.
   Lemma index_inj:
     forall r1 r2, index r1 = index r2 -> r1 = r2.
   Proof.
     decide_goal.
   Qed.
+
+  (* These no longer work:
 
   Open Scope Z_scope.
 
@@ -205,7 +212,58 @@ Module IndexedMreg <: INDEXED_TYPE.
     assert (AST.typesize (mreg_type r1) <= 8) by (destruct (mreg_type r1); simpl; omega).
     omega.
   Qed.
+*)
 End IndexedMreg.
+
+(* Machine-specific definitions needed for capturing register aliasing. *)
+
+Inductive part :=
+  | PFull (r: mreg)
+  | PLow  (r: mreg)
+  | PHigh (r: mreg).
+
+Definition mreg_part (r: mreg): part :=
+  match r with
+  | S0  => PLow D0  | S1  => PHigh D0
+  | S2  => PLow D1  | S3  => PHigh D1
+  | S4  => PLow D2  | S5  => PHigh D2
+  | S6  => PLow D3  | S7  => PHigh D3
+  | S8  => PLow D4  | S9  => PHigh D4
+  | S10 => PLow D5  | S11 => PHigh D5
+  | S12 => PLow D6  | S13 => PHigh D6
+  | S14 => PLow D7  | S15 => PHigh D7
+  | S16 => PLow D8  | S17 => PHigh D8
+  | S18 => PLow D9  | S19 => PHigh D9
+  | S20 => PLow D10 | S21 => PHigh D10
+  | S22 => PLow D11 | S23 => PHigh D11
+  | S24 => PLow D12 | S25 => PHigh D12
+  | S26 => PLow D13 | S27 => PHigh D13
+  | S28 => PLow D14 | S29 => PHigh D14
+  | S30 => PLow D15 | S31 => PHigh D15
+  | r   => PFull r
+  end.
+
+Definition diff_low_bound (r: mreg): mreg :=
+  match mreg_part r with
+  | PFull r =>
+    match subregs r with
+    | Some (lo, hi) => lo
+    | None => r
+    end
+  | PLow s  => r
+  | PHigh s => s
+  end.
+
+Definition diff_high_bound (r: mreg): mreg :=
+  match mreg_part r with
+  | PFull r =>
+    match subregs r with
+    | Some (lo, hi) => hi
+    | None => r
+    end
+  | PLow s => s
+  | PHigh s => r
+  end.
 
 Definition is_stack_reg (r: mreg) : bool := false.
 

@@ -402,6 +402,141 @@ Definition proj_value (q: quantity) (vl: list memval) : val :=
   | _ => Vundef
   end.
 
+(* GB *)
+Lemma check_value_length:
+  forall q v vl n,
+  check_value n v q vl = true -> n = length vl.
+Proof.
+  induction vl; intros.
+- destruct n; auto. simpl in H; congruence.
+- destruct n; simpl in H. congruence.
+  destruct a; try congruence. InvBooleans; subst.
+  simpl; auto.
+Qed.
+
+Lemma check_value_length_mismatch:
+  forall q v vl,
+  size_quantity_nat q <> length vl -> check_value (size_quantity_nat q) v q vl = false.
+Proof.
+  intros. apply not_true_is_false. contradict H. eapply check_value_length; eauto.
+Qed.
+
+Lemma proj_value_length_mismatch:
+  forall q vl,
+  size_quantity_nat q <> length vl -> proj_value q vl = Vundef.
+Proof.
+  intros. unfold proj_value.
+  destruct vl; auto. destruct m; auto. rewrite check_value_length_mismatch; auto.
+Qed.
+
+Lemma check_value_fragment_length:
+  forall v q vl f,
+  check_value (length vl) v q vl = true ->
+  In f vl ->
+  exists n', f = Fragment v q n'.
+Proof.
+  induction vl; intros; inv H0.
+  destruct f; inv H; InvBooleans. exists n; congruence.
+  destruct a; inv H; InvBooleans. auto.
+Qed.
+
+Lemma check_value_fragment:
+  forall n v q vl f,
+  check_value n v q vl = true ->
+  In f vl ->
+  exists n', f = Fragment v q n'.
+Proof.
+  intros. exploit check_value_length; eauto; intros.
+  subst n; eauto using check_value_fragment_length.
+Qed.
+
+Lemma check_value_diff_q:
+  forall q q' v n n' vl,
+  q <> q' ->
+  In (Fragment v q n) vl -> check_value n' v q' vl = false.
+Proof.
+  intros. destruct (check_value n' v q' vl) eqn:C; auto; exfalso.
+  eapply check_value_fragment in C; eauto.
+  destruct C; congruence.
+Qed.
+
+Lemma proj_value_diff_q:
+  forall q q' v n vl,
+  q <> q' ->
+  In (Fragment v q n) vl -> proj_value q' vl = Vundef.
+Proof.
+  intros; unfold proj_value.
+  destruct vl; auto.
+  inversion H0. subst. erewrite check_value_diff_q; eauto.
+  destruct m; eauto.
+  destruct (check_value (size_quantity_nat q') v0 q' (Fragment v0 q0 n0 :: vl)) eqn:C; eauto.
+  eapply check_value_fragment in C; eauto. destruct C; congruence.
+Qed.
+
+Lemma check_value_byte:
+  forall b n v q vl,
+  In (Byte b) vl ->
+  check_value n v q vl = false.
+Proof.
+  intros. destruct (check_value n v q vl) eqn:C; auto; exfalso.
+  eapply check_value_fragment in C; eauto.
+  destruct C; congruence.
+Qed.
+
+Lemma proj_value_byte:
+  forall b q vl,
+  In (Byte b) vl ->
+  proj_value q vl = Vundef.
+Proof.
+  intros. unfold proj_value.
+  destruct vl; auto. destruct m; auto.
+  erewrite check_value_byte; eauto.
+Qed.
+
+Lemma inj_bytes_encode_int:
+  forall sz x,
+  (0 <> sz)%nat ->
+  exists b, In (Byte b) (inj_bytes (encode_int sz x)).
+Proof.
+  intros. unfold inj_bytes.
+  generalize (encode_int_length sz x); intro LEN.
+  destruct (encode_int sz x) eqn:E.
+  simpl in LEN; congruence.
+  exists i. simpl; auto.
+Qed.
+
+Lemma proj_value_encode_int:
+  forall sz x q,
+  (0 <> sz)%nat ->
+  proj_value q (inj_bytes (encode_int sz x)) = Vundef.
+Proof.
+  intros.
+  apply inj_bytes_encode_int with (x := x) in H. destruct H.
+  eauto using proj_value_byte.
+Qed.
+
+Lemma proj_value_encode_int_app_l:
+  forall sz x q l,
+  (0 <> sz)%nat ->
+  proj_value q (inj_bytes (encode_int sz x) ++ l) = Vundef.
+Proof.
+  intros.
+  exploit inj_bytes_encode_int; eauto; intros [b B].
+  assert (In (Byte b) (inj_bytes (encode_int sz x) ++ l)) by (apply in_app; eauto).
+  eauto using proj_value_byte.
+Qed.
+
+Lemma proj_value_encode_int_app_r:
+  forall sz x q l,
+  (0 <> sz)%nat ->
+  proj_value q (l ++ inj_bytes (encode_int sz x)) = Vundef.
+Proof.
+  intros.
+  exploit inj_bytes_encode_int; eauto; intros [b B].
+  assert (In (Byte b) (l ++ inj_bytes (encode_int sz x))) by (apply in_app; eauto).
+  eauto using proj_value_byte.
+Qed.
+
 Definition encode_val (chunk: memory_chunk) (v: val) : list memval :=
   match v, chunk with
   | Vint n, (Mint8signed | Mint8unsigned) => inj_bytes (encode_int 1%nat (Int.unsigned n))
