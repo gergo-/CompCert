@@ -302,6 +302,13 @@ Proof.
   right. right. right. unfold mreg_diff, mreg_overlap. tauto.
 Qed.
 
+Lemma mreg_relation_cases_simple:
+  forall r s,
+  r = s \/ subreg r s \/ subreg s r \/ mreg_diff r s.
+Proof.
+  intros. destruct (mreg_relation_cases r s); tauto.
+Qed.
+
 (* Relations between registers should be decidable by computation. *)
 
 Program Instance Decidable_mreg_diff: forall (x y: mreg), Decidable (mreg_diff x y) := {
@@ -530,34 +537,11 @@ Module Regfile.
     auto using diff_sym.
   Qed.
 
-  Lemma address_lt:
-    forall r s,
-    mreg_diff r s ->
-    addr r < addr s ->
-    next_addr r <= addr s.
-  Proof.
-    decide_mreg_diff_goal.
-  Qed.
-
   Lemma diff_outside_interval:
     forall r s, mreg_diff r s -> next_addr r <= addr s \/ next_addr s <= addr r.
   Proof.
     decide_mreg_diff_goal.
   Qed.
-
-  (*
-  Lemma diff_outside_interval:
-    forall r s, r <> s -> next_addr r <= addr s \/ next_addr s <= addr r.
-  Proof.
-    intros.
-    assert (Neq: addr r <> addr s).
-    { unfold addr. contradict H. apply IndexedMreg.index_inj. xomega. }
-    assert (Cases: addr r < addr s \/ addr s < addr r) by omega.
-    destruct Cases.
-    - left. apply address_lt; auto.
-    - right. apply address_lt; auto.
-  Qed.
-*)
 
   Definition chunk_of_mreg (r: mreg) : memory_chunk :=
     chunk_of_type (mreg_type r).
@@ -619,30 +603,6 @@ Module Regfile.
     rewrite !Z2Nat.id; omega.
   Qed.
 
-  (*
-  Lemma gu_subreg:
-    forall r s rf,
-    subreg r s ->
-    get r (set s Vundef rf) = Vundef.
-  Proof.
-    intros. unfold get, set, get_bytes, set_bytes, addr.
-    generalize (subreg_cases r s H); intros [FULL [LO | HI]]; rewrite FULL.
-    - rewrite LO.
-      unfold chunk_of_mreg.
-      rewrite (subreg_size r s H), (superreg_type r s H).
-      rewrite Mem.getN_setN_prefix.
-      destruct (chunk_of_type (mreg_type r)); simpl; auto.
-      simpl; auto.
-    - rewrite HI.
-      unfold chunk_of_mreg.
-      rewrite (subreg_size r s H), (superreg_type r s H).
-      replace 4 with (Z.of_nat (Z.to_nat 4)) at 3; auto.
-      rewrite Mem.getN_setN_suffix.
-      destruct (chunk_of_type (mreg_type r)); simpl; auto.
-      simpl; auto.
-  Qed.
-*)
-
   Lemma gu_subreg:
     forall r s v rf,
     subreg r s ->
@@ -681,59 +641,6 @@ Module Regfile.
     unfold decode_val. rewrite proj_bytes_append.
     simpl (proj_bytes undefs).
     destruct a, b, c, d; simpl; auto; rewrite !andb_false_r; auto.
-  Qed.
-
-  Lemma gu_superreg':
-    forall r s rf,
-    subreg r s ->
-    get s (set r Vundef rf) = Vundef.
-  Proof.
-    intros. unfold get, set, get_bytes, set_bytes, addr.
-    generalize (subreg_cases r s H); intros [FULL [LO | HI]]; rewrite FULL.
-    - rewrite LO.
-      unfold chunk_of_mreg.
-      rewrite (superreg_type r s H).
-      simpl typesize.
-      change (Z.to_nat 8) with (4 + 4)%nat.
-      rewrite Mem.getN_concat.
-      simpl chunk_of_type.
-      replace (4%nat) with (length (encode_val (chunk_of_type (mreg_type r)) Vundef)).
-      rewrite Mem.getN_setN_same.
-      rewrite Mem.getN_setN_outside.
-      destruct (mreg_type r); simpl; unfold decode_val; simpl; auto.
-      omega.
-      apply subreg_size in H.
-      destruct (mreg_type r); simpl; auto; inv H.
-    - rewrite HI.
-      unfold chunk_of_mreg.
-      rewrite (superreg_type r s H).
-      simpl typesize.
-      change (Z.to_nat 8) with (4 + 4)%nat.
-      rewrite Mem.getN_concat.
-      simpl chunk_of_type.
-      rewrite Mem.getN_setN_outside.
-
-      replace (Z.pos (IndexedMreg.index s) * 4 + Z.of_nat 4) with (addr r).
-      replace (Z.pos (IndexedMreg.index s) * 4 + 4) with (addr r).
-      replace (4%nat) with (length (encode_val (chunk_of_type (mreg_type r)) Vundef)).
-      rewrite Mem.getN_setN_same.
-      apply subreg_size in H.
-      destruct (mreg_type r); try inv H; simpl encode_val. try apply decode_undef_suffix.
-      apply decode_undef_suffix.
-      unfold decode_val.
-
-      erewrite proj_value_diff_q with (q := Q32).
-      simpl Val.load_result.
-      destruct (proj_bytes _); auto.
-      congruence.
-      apply in_app. right. unfold inj_value. simpl inj_value_rec. eapply in_eq.
-
-      apply subreg_size in H.
-      destruct (mreg_type r); simpl; try inv H; auto.
-      unfold addr. rewrite HI; congruence.
-      unfold addr. rewrite HI. f_equal.
-      left.
-      simpl. omega.
   Qed.
 
   Lemma gu_superreg:
@@ -841,51 +748,44 @@ Module Regfile.
       simpl. omega.
   Qed.
 
-  Lemma gu_overlap':
-    forall r s rf,
-    mreg_overlap r s ->
-    get r (set s Vundef rf) = Vundef.
-  Proof.
-    intros.
-    xcompare_mregs r s.
-    - rewrite gss; destruct (chunk_of_mreg s); auto.
-    - rewrite gss; destruct (chunk_of_mreg s); auto.
-    - rewrite gss; destruct (chunk_of_mreg s); auto.
-    - unfold get, set. unfold get_bytes, set_bytes. unfold addr.
-      rewrite LO, FULL.
-      unfold chunk_of_mreg.
-      rewrite (subreg_size r s SUB), (superreg_type r s SUB).
-      rewrite Mem.getN_setN_prefix.
-      simpl. destruct (chunk_of_type (mreg_type r)); simpl; auto.
-      simpl. auto.
-    - unfold get, set. unfold get_bytes, set_bytes. unfold addr.
-      rewrite HI, FULL.
-      unfold chunk_of_mreg.
-      rewrite (subreg_size r s SUB), (superreg_type r s SUB).
-      replace 4 with (Z.of_nat (Z.to_nat 4)) at 3; auto.
-      rewrite Mem.getN_setN_suffix.
-      simpl. destruct (chunk_of_type (mreg_type r)); simpl; auto.
-      simpl. auto.
-    - apply gu_superreg; auto.
-    - apply gu_superreg; auto.
-    - apply diff_not_overlap in DIFF; tauto.
-  Qed.
-
   Lemma gu_overlap:
     forall r s v rf,
     mreg_overlap r s ->
     get r (set s v rf) = Vundef.
   Proof.
     intros.
-    xcompare_mregs r s.
-    - apply same_not_overlap in H; tauto.
-    - apply same_not_overlap in H; tauto.
-    - apply same_not_overlap in H; tauto.
+    destruct (mreg_relation_cases_simple r s) as [SAME | [SUB | [SUB | DIFF]]].
+    - subst. apply same_not_overlap in H; tauto.
     - apply gu_subreg; auto.
-    - apply gu_subreg; auto.
-    - apply gu_superreg; auto.
     - apply gu_superreg; auto.
     - apply diff_not_overlap in DIFF; tauto.
+  Qed.
+
+  Lemma gss_bytes:
+    forall r bs rf,
+    let sz := Z.to_nat (AST.typesize (mreg_type r)) in
+    length bs = sz ->
+    get_bytes r (set_bytes r bs rf) = firstn sz bs.
+  Proof.
+    intros. unfold get_bytes, set_bytes.
+    subst sz. rewrite <- H. rewrite Mem.getN_setN_same.
+    rewrite firstn_all; auto.
+  Qed.
+
+  Lemma gso_bytes:
+    forall r s bs rf,
+    let sz := Z.to_nat (AST.typesize (mreg_type r)) in
+    length bs = sz ->
+    mreg_diff r s ->
+    get_bytes s (set_bytes r bs rf) = get_bytes s rf.
+  Proof.
+    intros. unfold get_bytes, set_bytes.
+    rewrite Mem.getN_setN_outside; auto.
+    rewrite H. subst sz.
+    apply diff_outside_interval in H0. unfold next_addr in H0.
+    rewrite !Z2Nat.id. omega.
+    generalize (AST.typesize_pos (mreg_type r)); omega.
+    generalize (AST.typesize_pos (mreg_type s)); omega.
   Qed.
 
   (*
