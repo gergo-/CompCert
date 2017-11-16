@@ -1275,9 +1275,9 @@ Lemma undef_regs_outside:
   Loc.notin l (map R ml) -> (undef_regs ml ls) @ l = ls @ l.
 Proof.
   induction ml; destruct ls; simpl; intros. auto.
-  generalize (IHml (t, l)); intro IH.
+  generalize (IHml (t, t0)); intro IH.
   rewrite LTL_undef_regs_Regfile_undef_regs in *.
-  fold (Locmap.set (R a) Vundef (Regfile.undef_regs ml t, l)).
+  fold (Locmap.set (R a) Vundef (Regfile.undef_regs ml t, t0)).
   rewrite Locmap.gso. apply IH. tauto. apply Loc.diff_sym. tauto.
 Qed.
 

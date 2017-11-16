@@ -317,6 +317,119 @@ Module Loc.
 
 End Loc.
 
+(** * Representation of the stack frame *)
+
+(** The [Stack] module defines mappings from stack slots to values,
+  represented as a mapping from addresses to bytes. The stack frame is
+  represented as three distinct such mappings, one for each kind of slot; a
+  stack slot [S sl ofs q] is accessed in the mapping for its kind [sl] at an
+  address computed from its offset [ofs], using [q] to inform how many bytes to
+  access and how to encode/decode them. *)
+
+Module Stack.
+
+  Definition t := slot -> ZMap.t memval.
+
+  Definition init : t := fun _ => ZMap.init Undef.
+
+  (* A slot's address: The index of its first byte. Offsets are expressed in
+     terms of words, so we must scale them. *)
+  Definition addr (ofs: Z) : Z := ofs * 4.
+
+  (* The address one byte past the end of a slot with [ofs] and [q]. The next
+     nonoverlapping slot may start here. *)
+  Definition next_addr (ofs: Z) (q: quantity) : Z := addr ofs * AST.typesize (typ_of_quantity q).
+
+  Definition get_bytes sl ofs q (stack: t) : list memval :=
+    Mem.getN (Z.to_nat (AST.typesize (typ_of_quantity q))) (addr ofs) (stack sl).
+
+  Definition get sl ofs q (stack: t) : val :=
+    decode_val (chunk_of_type (typ_of_quantity q)) (get_bytes sl ofs q stack).
+
+  Definition set_bytes sl ofs (bytes: list memval) (stack: t) : t :=
+    fun slot =>
+      if slot_eq slot sl then
+        Mem.setN bytes (addr ofs) (stack sl)
+      else
+        stack slot.
+
+  Definition set sl ofs q (v: val) (stack: t) : t :=
+    set_bytes sl ofs (encode_val (chunk_of_type (typ_of_quantity q)) v) stack.
+
+  Lemma chunk_length:
+    forall ty v,
+    Z.to_nat (AST.typesize ty) = length (encode_val (chunk_of_type ty) v).
+  Proof.
+    intros. rewrite encode_val_length. destruct ty; auto.
+  Qed.
+
+  Lemma gss:
+    forall sl ofs q v stack,
+    get sl ofs q (set sl ofs q v stack) = Val.load_result (chunk_of_type (typ_of_quantity q)) v.
+  Proof.
+    intros. unfold get, set, get_bytes, set_bytes.
+    rewrite dec_eq_true. erewrite chunk_length. rewrite Mem.getN_setN_same.
+    erewrite <- decode_encode_val_similar; eauto.
+    eapply decode_encode_val_general.
+  Qed.
+
+  Lemma gso:
+    forall sl ofs q sl' ofs' q' v stack,
+    Loc.diff (S sl ofs q) (S sl' ofs' q') ->
+    get sl ofs q (set sl' ofs' q' v stack) = get sl ofs q stack.
+  Proof.
+    intros. unfold get, set, get_bytes, set_bytes.
+    destruct (slot_eq sl sl'); subst; auto.
+    rewrite Mem.getN_setN_outside; auto.
+    rewrite <- chunk_length, !Z2Nat.id.
+    destruct H as [FALSE|]. contradiction.
+    assert (Size: forall t, AST.typesize t = 4 * typesize t) by (intro t; destruct t; auto).
+    rewrite !Size. unfold addr. omega.
+    destruct q'; simpl; omega.
+    destruct q; simpl; omega.
+  Qed.
+
+  Lemma gu_overlap:
+    forall sl ofs q sl' ofs' q' v stack,
+    S sl ofs q <> S sl' ofs' q' ->
+    ~ Loc.diff (S sl ofs q) (S sl' ofs' q') ->
+    get sl ofs q (set sl' ofs' q' v stack) = Vundef.
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma gss_bytes:
+    forall sl ofs q bs rf,
+    let sz := Z.to_nat (AST.typesize (typ_of_quantity q)) in
+    length bs = sz ->
+    get_bytes sl ofs q (set_bytes sl ofs bs rf) = firstn sz bs.
+  Proof.
+    intros. unfold get_bytes, set_bytes.
+    subst sz. rewrite <- H. rewrite dec_eq_true, Mem.getN_setN_same.
+    rewrite firstn_all; auto.
+  Qed.
+
+  Lemma gso_bytes:
+    forall sl ofs q sl' ofs' q' bs stack,
+    let sz := Z.to_nat (AST.typesize (typ_of_quantity q)) in
+    length bs = sz ->
+    Loc.diff (S sl ofs q) (S sl' ofs' q') ->
+    get_bytes sl' ofs' q' (set_bytes sl ofs bs stack) = get_bytes sl' ofs' q' stack.
+  Proof.
+    intros. unfold get_bytes, set_bytes.
+    destruct (slot_eq sl sl'); subst; auto.
+    rewrite dec_eq_true, Mem.getN_setN_outside; auto.
+    rewrite H. subst sz.
+    destruct H0 as [FALSE|]. contradiction.
+    assert (Size: forall t, AST.typesize t = 4 * typesize t) by (intro t; destruct t; auto).
+    rewrite !Size, !Z2Nat.id. unfold addr. omega.
+    destruct q; simpl; omega.
+    destruct q'; simpl; omega.
+    rewrite dec_eq_false; auto.
+  Qed.
+
+End Stack.
+
 (** * Mappings from locations to values *)
 
 (** The [Locmap] module defines mappings from locations to values,
@@ -327,17 +440,17 @@ Set Implicit Arguments.
 
 Module Locmap.
 
-  Definition t := (Regfile.t * (loc -> list memval))%type.
+  Definition t := (Regfile.t * Stack.t)%type.
 
   Definition chunk_of_loc (l: loc) : memory_chunk :=
     chunk_of_type (Loc.type l).
 
-  Definition init : t := (Regfile.init, fun (l: loc) => encode_val (chunk_of_loc l) Vundef).
+  Definition init : t := (Regfile.init, Stack.init).
 
   Definition get (l: loc) (m: t) : val :=
     match l, m with
     | R r, (rf, stack) => Regfile.get r rf
-    | S _ _ _, (rf, stack) => decode_val (chunk_of_loc l) (stack l)
+    | S sl ofs ty, (rf, stack) => Stack.get sl ofs ty stack
     end.
 
   (* Auxiliary for some places where a function of type [loc -> val] is expected. *)
@@ -356,28 +469,18 @@ Module Locmap.
       abstract stack slots are mapped to concrete memory locations
       in the [Stacking] phase.  Hence, values stored in stack slots
       are normalized according to the type of the slot. *)
+  (** FIXME: The above comment is now out of date. *)
 
   Definition set (l: loc) (v: val) (m: t) : t :=
     match l, m with
     | R r, (rf, stack) => (Regfile.set r v rf, stack)
-    | S _ _ _, (rf, stack) => (rf,
-      fun (p: loc) =>
-        if Loc.eq l p then
-          encode_val (chunk_of_loc l) v
-        else if Loc.diff_dec l p then
-          stack p
-        else
-          encode_val (chunk_of_loc l) Vundef)
+    | S sl ofs ty, (rf, stack) => (rf, Stack.set sl ofs ty v stack)
     end.
 
   Lemma gss: forall l v m,
     get l (set l v m) = Val.load_result (chunk_of_type (Loc.type l)) v.
   Proof.
-    intros.
-    destruct l, m. apply Regfile.gss.
-    unfold get, set. rewrite dec_eq_true.
-    erewrite <- decode_encode_val_similar; eauto.
-    eapply decode_encode_val_general.
+    intros. destruct l, m. apply Regfile.gss. apply Stack.gss.
   Qed.
 
   Lemma gss_reg: forall r v m, Val.has_type v (mreg_type r) -> get (R r) (set (R r) v m) = v.
@@ -395,11 +498,7 @@ Module Locmap.
     intros.
     destruct l, m.
     destruct p; simpl in H; auto. apply Regfile.gso; auto using Registerfile.diff_sym.
-    unfold get, set. destruct (Loc.eq (S sl pos q) p).
-    subst p. elim (Loc.same_not_diff _ H).
-    destruct (Loc.diff_dec (S sl pos q) p).
-    auto.
-    contradiction.
+    destruct p. simpl in H; auto. apply Stack.gso; auto using Loc.diff_sym.
   Qed.
 
   Fixpoint undef (ll: list loc) (m: t) {struct ll} : t :=
@@ -424,19 +523,25 @@ Module Locmap.
       destruct a, l, m; simpl in n.
       simpl. rewrite Regfile.gu_overlap; auto.
       apply mreg_overlap_sym. apply not_same_not_diff_overlap; congruence.
-      auto. auto. unfold get, set. rewrite dec_eq_false; auto.
-      destruct (Loc.diff_dec (S sl pos q) (S sl0 pos0 q0)). auto. apply decode_encode_undef. }
+      auto. auto.
+      fold (Loc.diff (S sl pos q) (S sl0 pos0 q0)) in n.
+      unfold get, set. rewrite Stack.gu_overlap; auto using Loc.diff_sym. }
     induction ll; simpl; intros. contradiction.
     destruct H. apply P. subst a. apply gss_typed. exact I.
     auto.
   Qed.
 
   Lemma gu_overlap:
-    forall r s v m,
-    mreg_overlap r s ->
-    get (R r) (set (R s) v m) = Vundef.
+    forall l l' v m,
+    l <> l' ->
+    ~ Loc.diff l l' ->
+    get l (set l' v m) = Vundef.
   Proof.
-    intros; simpl. destruct m. auto using Regfile.gu_overlap.
+    intros. destruct l, l'; simpl in H0; try contradiction.
+    destruct m; simpl.
+    apply Regfile.gu_overlap. apply not_same_not_diff_overlap; congruence.
+    destruct m; simpl.
+    apply Stack.gu_overlap; auto.
   Qed.
 
   Definition getpair (p: rpair loc) (m: t) : val :=
@@ -477,6 +582,49 @@ Module Locmap.
     | BR_splitlong hi lo =>
         set (R lo) (Val.loword v) (set (R hi) (Val.hiword v) m)
     end.
+
+  (* Location access as raw bytes. This is used for spilling: When spilling a
+    superregister, we must store its bytes to the stack and later restore them.
+    This cannot be expressed in terms of values because the superregister has an
+    undefined value if any of its subregisters has a defined value and vice
+    versa. In either case, values are restored correctly, since restoring a
+    concrete list of bytes restores whatever interpretation it had in terms of
+    values. *)
+
+  Definition get_bytes (l: loc) (m: t) : list memval :=
+    match l, m with
+    | R r, (rf, stack) => Regfile.get_bytes r rf
+    | S sl ofs ty, (rf, stack) => Stack.get_bytes sl ofs ty stack
+    end.
+
+  Definition set_bytes (l: loc) (bs: list memval) (m: t) : t :=
+    match l, m with
+    | R r, (rf, stack) => (Regfile.set_bytes r bs rf, stack)
+    | S sl ofs ty, (rf, stack) => (rf, Stack.set_bytes sl ofs bs stack)
+    end.
+
+  Lemma gss_bytes: forall l bs m,
+    let sz := Z.to_nat (AST.typesize (Loc.type l)) in
+    length bs = sz ->
+    get_bytes l (set_bytes l bs m) = firstn sz bs.
+  Proof.
+    intros. destruct l, m.
+    apply Regfile.gss_bytes; auto.
+    apply Stack.gss_bytes; auto.
+  Qed.
+
+  Lemma gso_bytes: forall l bs m p,
+    let sz := Z.to_nat (AST.typesize (Loc.type l)) in
+    length bs = sz ->
+    Loc.diff l p ->
+    get_bytes p (set_bytes l bs m) = get_bytes p m.
+  Proof.
+    intros. destruct l, m, p.
+    apply Regfile.gso_bytes; auto.
+    simpl; auto.
+    simpl; auto.
+    eapply Stack.gso_bytes; eauto.
+  Qed.
 
 End Locmap.
 

@@ -259,18 +259,25 @@ Proof.
   inv e. rename ofs0 into ofs. rename q0 into q.
   exists (Val.load_result (chunk_of_type (typ_of_quantity q)) v'); split.
   eapply Mem.load_store_similar_2; eauto. omega.
+  (*
   unfold Locmap.chunk_of_loc; simpl.
   erewrite <- decode_encode_val_similar; eauto using decode_encode_val_general.
   auto using decode_val_inject, encode_val_inject.
+*)
+  rewrite Stack.gss; auto using Val.load_result_inject.
 * (* different locations *)
   exploit H; eauto. intros (v0 & X & Y). exists v0; split; auto.
   rewrite <- X; eapply Mem.load_store_other; eauto.
   destruct d. congruence. right. rewrite ! size_type_chunk, ! typesize_typesize. omega.
+  rewrite Stack.gso; auto using Loc.diff_sym.
 * (* overlapping locations *)
   destruct (Mem.valid_access_load m' (chunk_of_type (typ_of_quantity q0)) sp (pos + 4 * ofs0)) as [v'' LOAD].
   apply Mem.valid_access_implies with Writable; auto with mem.
   eapply valid_access_location; eauto.
+  (*
   exists v''; rewrite decode_encode_undef; auto.
+*)
+  exists v''; rewrite Stack.gu_overlap; auto using Loc.diff_sym.
 + apply (m_invar P) with m; auto.
   eapply Mem.store_unchanged_on; eauto.
   intros i; rewrite size_type_chunk, typesize_typesize. intros; red; intros.
@@ -620,8 +627,7 @@ Proof.
   rewrite Locmap.gss, Val.load_result_same; auto.
   destruct (mreg_diff_dec r0 r).
   rewrite Locmap.gso; auto. apply diff_sym; auto.
-  rewrite Locmap.gu_overlap; simpl; auto.
-  apply not_same_not_diff_overlap; auto.
+  rewrite Locmap.gu_overlap; simpl; auto. congruence.
 Qed.
 
 Lemma agree_regs_set_pair:

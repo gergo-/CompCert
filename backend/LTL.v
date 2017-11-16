@@ -100,12 +100,11 @@ Definition call_regs (caller: locset) : locset :=
   match caller with
   | (caller_rf, caller_stack) =>
     (caller_rf,
-     fun l: loc =>
-       match l with
-       | R r => encode_val (Locmap.chunk_of_loc l) Vundef
-       | S Local ofs ty => encode_val (Locmap.chunk_of_loc l) Vundef
-       | S Incoming ofs ty => caller_stack (S Outgoing ofs ty)
-       | S Outgoing ofs ty => encode_val (Locmap.chunk_of_loc l) Vundef
+     fun s: slot =>
+       match s with
+       | Local => ZMap.init Undef
+       | Incoming => caller_stack Outgoing
+       | Outgoing => ZMap.init Undef
        end)
   end.
 
@@ -345,9 +344,9 @@ Proof.
   intros. destruct l, caller.
   - reflexivity.
   - unfold Locmap.get, call_regs, call_regs_spec.
-    destruct sl; try (rewrite decode_encode_undef; auto).
-    unfold Locmap.chunk_of_loc; reflexivity.
-Qed.
+    unfold Stack.get, Stack.get_bytes.
+    admit.
+Admitted.
 
 Local Opaque all_mregs.
 
