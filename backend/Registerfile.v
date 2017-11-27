@@ -546,25 +546,28 @@ Module Regfile.
   Definition chunk_of_mreg (r: mreg) : memory_chunk :=
     chunk_of_type (mreg_type r).
 
-  Lemma chunk_length:
+  Definition quantity_of_mreg (r: mreg) : quantity :=
+    quantity_chunk (chunk_of_mreg r).
+
+  Lemma typesize_inj_value_length:
     forall r v,
-    Z.to_nat (AST.typesize (mreg_type r)) = length (encode_val (chunk_of_mreg r) v).
+    Z.to_nat (AST.typesize (mreg_type r)) = length (inj_value (quantity_of_mreg r) v).
   Proof.
-    intros. rewrite encode_val_length.
-    unfold chunk_of_mreg. destruct (mreg_type r); auto.
+    intros. rewrite inj_value_length.
+    unfold quantity_of_mreg, chunk_of_mreg. destruct (mreg_type r); auto.
   Qed.
 
   Definition get_bytes (r: mreg) (rf: t) : list memval :=
     Mem.getN (Z.to_nat (AST.typesize (mreg_type r))) (addr r) rf.
 
   Definition get (r: mreg) (rf: t) : val :=
-    decode_val (chunk_of_mreg r) (get_bytes r rf).
+    proj_value (quantity_of_mreg r) (get_bytes r rf).
 
   Definition set_bytes (r: mreg) (bytes: list memval) (rf: t) : t :=
-    Mem.setN bytes (addr r) rf.
+    Mem.setN (firstn (Z.to_nat (AST.typesize (mreg_type r))) bytes) (addr r) rf.
 
   Definition set (r: mreg) (v: val) (rf: t) : t :=
-    set_bytes r (encode_val (chunk_of_mreg r) v) rf.
+    set_bytes r (inj_value (quantity_of_mreg r) v) rf.
 
   (* Update the [old] register file by choosing the values for the registers in
      [rs] from [new]. *)
@@ -585,9 +588,28 @@ Module Regfile.
     get r (set r v rf) = Val.load_result (chunk_of_mreg r) v.
   Proof.
     intros. unfold get, set, get_bytes, set_bytes.
-    erewrite chunk_length. rewrite Mem.getN_setN_same.
-    erewrite <- decode_encode_val_similar; eauto.
-    eapply decode_encode_val_general.
+    destruct (Val.has_type_dec v (mreg_type r)).
+    - erewrite typesize_inj_value_length, firstn_all, Mem.getN_setN_same.
+      rewrite proj_inj_value.
+      unfold chunk_of_mreg. rewrite Val.load_result_same; auto.
+      unfold quantity_of_mreg, chunk_of_mreg.
+      destruct r; auto using fits_quantity_Q32, fits_quantity_Q64.
+    - destruct (mreg_type_cases r).
+      + destruct v; simpl in n; try rewrite H in n; try contradiction.
+        unfold quantity_of_mreg, chunk_of_mreg; rewrite H.
+        simpl quantity_chunk. simpl Z.to_nat.
+        change (Pos.to_nat 4) with (length (inj_value Q32 (Vlong i))).
+        rewrite Mem.getN_setN_same. rewrite firstn_all.
+        rewrite proj_inj_undef. simpl chunk_of_type. simpl. reflexivity.
+        simpl. auto.
+
+        unfold quantity_of_mreg, chunk_of_mreg; rewrite H.
+        simpl quantity_chunk. simpl Z.to_nat.
+        change (Pos.to_nat 4) with (length (inj_value Q32 (Vfloat f))).
+        rewrite Mem.getN_setN_same. rewrite firstn_all.
+        rewrite proj_inj_undef. simpl chunk_of_type. simpl. reflexivity.
+        simpl. auto.
+      + rewrite H in n. destruct v; simpl in n; tauto.
   Qed.
 
   Lemma gso:
@@ -597,10 +619,11 @@ Module Regfile.
   Proof.
     intros. unfold get, set, get_bytes, set_bytes.
     rewrite Mem.getN_setN_outside; auto.
-    rewrite <- chunk_length.
+    rewrite firstn_length_le.
     generalize (AST.typesize_pos (mreg_type s)), (AST.typesize_pos (mreg_type r)); intros.
     apply diff_outside_interval in H. unfold next_addr in H.
     rewrite !Z2Nat.id; omega.
+    rewrite <- typesize_inj_value_length; auto.
   Qed.
 
   Lemma gu_subreg:
@@ -609,28 +632,27 @@ Module Regfile.
     get r (set s v rf) = Vundef.
   Proof.
     intros. unfold get, set, get_bytes, set_bytes, addr.
+    assert (Q: quantity_chunk (chunk_of_type (mreg_type r)) = Q32).
+    { apply subreg_size in H; destruct (mreg_type r); auto; inv H. }
     generalize (subreg_cases r s H); intros [FULL [LO | HI]]; rewrite FULL.
     - rewrite LO.
-      unfold chunk_of_mreg.
-      rewrite (subreg_size r s H), (superreg_type r s H).
-      rewrite Mem.getN_setN_prefix.
-
-      destruct (chunk_of_type (mreg_type r)); simpl; auto; destruct v; simpl; auto;
-      unfold decode_val, proj_bytes; destruct Archi.ptr64; simpl; auto; rewrite !andb_false_r; simpl; auto.
-
-      destruct v; simpl; auto.
+      unfold quantity_of_mreg, chunk_of_mreg.
+      rewrite (subreg_size r s H), (superreg_type r s H), Q.
+      rewrite Mem.getN_setN_prefix. unfold inj_value.
+      destruct (Val.eq v Vundef); simpl; auto.
+      erewrite check_value_diff_q with (q := Q64); simpl; eauto. congruence.
+      simpl typesize. rewrite firstn_length, inj_value_length. simpl; auto.
     - rewrite HI.
-      unfold chunk_of_mreg.
-      rewrite (subreg_size r s H), (superreg_type r s H).
+      unfold quantity_of_mreg, chunk_of_mreg.
+      rewrite (subreg_size r s H), (superreg_type r s H), Q.
       replace 4 with (Z.of_nat (Z.to_nat 4)) at 3; auto.
-      rewrite Mem.getN_setN_suffix.
-
-      destruct (chunk_of_type (mreg_type r)); simpl; auto; destruct v; simpl; auto;
-      unfold decode_val, proj_bytes; destruct Archi.ptr64; simpl; auto; rewrite !andb_false_r; simpl; auto.
-
-      destruct v; simpl; auto.
+      rewrite Mem.getN_setN_suffix. unfold inj_value.
+      destruct (Val.eq v Vundef); simpl; auto.
+      erewrite check_value_diff_q with (q := Q64); simpl; eauto. congruence.
+      simpl typesize. rewrite firstn_length, inj_value_length. simpl; auto.
   Qed.
 
+  (*
   Lemma decode_undef_suffix:
     forall a b c d,
     decode_val Many64 (a :: b :: c :: d :: Undef :: Undef :: Undef :: Undef :: nil) = Vundef.
@@ -642,6 +664,7 @@ Module Regfile.
     simpl (proj_bytes undefs).
     destruct a, b, c, d; simpl; auto; rewrite !andb_false_r; auto.
   Qed.
+*)
 
   Lemma gu_superreg:
     forall r s v rf,
@@ -649,57 +672,35 @@ Module Regfile.
     get s (set r v rf) = Vundef.
   Proof.
     intros. unfold get, set, get_bytes, set_bytes, addr.
+    assert (S: typesize (mreg_type r) = 4).
+    { apply subreg_size in H; destruct (mreg_type r); auto; inv H. }
+    assert (Q: quantity_chunk (chunk_of_type (mreg_type r)) = Q32).
+    { apply subreg_size in H; destruct (mreg_type r); auto; inv H. }
     generalize (subreg_cases r s H); intros [FULL [LO | HI]]; rewrite FULL.
     - rewrite LO.
-      unfold chunk_of_mreg.
-      rewrite (superreg_type r s H).
+      unfold quantity_of_mreg, chunk_of_mreg.
+      rewrite (superreg_type r s H), Q, S.
       simpl typesize.
       change (Z.to_nat 8) with (4 + 4)%nat.
       rewrite Mem.getN_concat.
       simpl chunk_of_type.
-      replace (4%nat) with (length (encode_val (chunk_of_type (mreg_type r)) v)).
+
+      generalize (inj_value_length Q32 v); intro LEN. simpl in LEN.
+      replace (4%nat) with (length (inj_value Q32 v)).
+      replace (Z.to_nat 4) with (length (inj_value Q32 v)). rewrite firstn_all.
       rewrite Mem.getN_setN_same.
       rewrite Mem.getN_setN_outside.
+      simpl quantity_chunk.
 
-      unfold decode_val.
-      replace (length (encode_val (chunk_of_type (mreg_type r)) v)) with 4%nat.
-      apply subreg_size in H.
-      destruct (mreg_type r); try inv H.
+      destruct (in_inj_value_cases v Q32).
+      rewrite proj_value_undef; auto. apply in_app; auto.
+      erewrite proj_value_diff_q with (q := Q32); try congruence. apply in_app; eauto.
 
-      destruct v; simpl; auto.
-      rewrite proj_value_encode_int_app_l; auto.
-      destruct (proj_bytes _); auto.
-      destruct Archi.ptr64. simpl proj_value. destruct (proj_bytes _); auto.
-      unfold inj_value. simpl inj_value_rec.
-      erewrite proj_value_diff_q with (q := Q32).
-      destruct (proj_bytes _); auto.
-      congruence.
-      apply in_app. left. eapply in_eq.
-
-      destruct v; simpl; auto.
-      rewrite proj_value_encode_int_app_l; auto.
-      destruct (proj_bytes _); auto.
-
-      destruct v; simpl; rewrite !andb_false_r; auto.
-      apply subreg_size in H.
-      destruct (mreg_type r); simpl; try inv H; auto.
-      destruct v; simpl; auto.
-      rewrite length_inj_bytes, encode_int_length; auto.
-      destruct v; simpl; auto.
-      rewrite length_inj_bytes, encode_int_length; auto.
-      destruct v; simpl; auto.
       omega.
-      apply subreg_size in H.
-      destruct (mreg_type r); simpl; try inv H; auto.
-      destruct v; simpl; auto.
-      rewrite length_inj_bytes, encode_int_length; auto.
-      destruct v; simpl; auto.
-      rewrite length_inj_bytes, encode_int_length; auto.
-      destruct v; simpl; auto.
 
     - rewrite HI.
-      unfold chunk_of_mreg.
-      rewrite (superreg_type r s H).
+      unfold quantity_of_mreg, chunk_of_mreg.
+      rewrite (superreg_type r s H), Q, S.
       simpl typesize.
       change (Z.to_nat 8) with (4 + 4)%nat.
       rewrite Mem.getN_concat.
@@ -708,39 +709,17 @@ Module Regfile.
 
       replace (Z.pos (IndexedMreg.index s) * 4 + Z.of_nat 4) with (addr r).
       replace (Z.pos (IndexedMreg.index s) * 4 + 4) with (addr r).
-      replace (4%nat) with (length (encode_val (chunk_of_type (mreg_type r)) v)).
+      replace (4%nat) with (length (inj_value Q32 v)).
+      replace (Z.to_nat 4) with (length (inj_value Q32 v)). rewrite firstn_all.
       rewrite Mem.getN_setN_same.
-      apply subreg_size in H.
-      destruct (mreg_type r); try inversion H; simpl encode_val.
+      simpl quantity_chunk.
 
-      unfold decode_val.
-      destruct v; simpl encode_val; try apply decode_undef_suffix.
-      rewrite proj_value_encode_int_app_r. destruct (proj_bytes _); auto. auto.
+      destruct (in_inj_value_cases v Q32).
+      rewrite proj_value_undef; auto. apply in_app; auto.
+      erewrite proj_value_diff_q with (q := Q32); try congruence. apply in_app; eauto.
 
-      destruct Archi.ptr64. apply decode_undef_suffix.
-      unfold inj_value. simpl inj_value_rec.
-      erewrite proj_value_diff_q with (q := Q32).
-      destruct (proj_bytes _); auto.
-      congruence.
-      apply in_app. right. eapply in_eq.
-
-      destruct v; simpl; try apply decode_undef_suffix.
-      unfold decode_val.
-      rewrite proj_value_encode_int_app_r. destruct (proj_bytes _); auto. auto.
-
-      unfold decode_val.
-      erewrite proj_value_diff_q with (q := Q32).
-      destruct (proj_bytes _); auto.
-      congruence.
-      apply in_app. right. destruct v; simpl; auto.
-
-      apply subreg_size in H.
-      destruct (mreg_type r); simpl; try inv H; auto.
-      destruct v; simpl; auto.
-      rewrite length_inj_bytes, encode_int_length; auto.
-      destruct v; simpl; auto.
-      rewrite length_inj_bytes, encode_int_length; auto.
-      destruct v; simpl; auto.
+      rewrite inj_value_length; auto.
+      rewrite inj_value_length; auto.
 
       unfold addr. rewrite HI; congruence.
       unfold addr. rewrite HI. f_equal.
@@ -768,8 +747,7 @@ Module Regfile.
     get_bytes r (set_bytes r bs rf) = firstn sz bs.
   Proof.
     intros. unfold get_bytes, set_bytes.
-    subst sz. rewrite <- H. rewrite Mem.getN_setN_same.
-    rewrite firstn_all; auto.
+    subst sz. rewrite <- H. rewrite firstn_all. rewrite Mem.getN_setN_same. auto.
   Qed.
 
   Lemma gso_bytes:
@@ -781,8 +759,10 @@ Module Regfile.
   Proof.
     intros. unfold get_bytes, set_bytes.
     rewrite Mem.getN_setN_outside; auto.
+    replace (Z.to_nat (typesize (mreg_type r))) with (length bs).
     rewrite H. subst sz.
     apply diff_outside_interval in H0. unfold next_addr in H0.
+    rewrite <- H, firstn_all, H.
     rewrite !Z2Nat.id. omega.
     generalize (AST.typesize_pos (mreg_type r)); omega.
     generalize (AST.typesize_pos (mreg_type s)); omega.

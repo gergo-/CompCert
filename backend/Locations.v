@@ -344,7 +344,7 @@ Module Stack.
     Mem.getN (Z.to_nat (AST.typesize (typ_of_quantity q))) (addr ofs) (stack sl).
 
   Definition get sl ofs q (stack: t) : val :=
-    decode_val (chunk_of_type (typ_of_quantity q)) (get_bytes sl ofs q stack).
+    proj_value q (get_bytes sl ofs q stack).
 
   Definition set_bytes sl ofs (bytes: list memval) (stack: t) : t :=
     fun slot =>
@@ -354,13 +354,13 @@ Module Stack.
         stack slot.
 
   Definition set sl ofs q (v: val) (stack: t) : t :=
-    set_bytes sl ofs (encode_val (chunk_of_type (typ_of_quantity q)) v) stack.
+    set_bytes sl ofs (inj_value q v) stack.
 
   Lemma chunk_length:
-    forall ty v,
-    Z.to_nat (AST.typesize ty) = length (encode_val (chunk_of_type ty) v).
+    forall q v,
+    Z.to_nat (AST.typesize (typ_of_quantity q)) = length (inj_value q v).
   Proof.
-    intros. rewrite encode_val_length. destruct ty; auto.
+    intros. rewrite inj_value_length. destruct q; auto.
   Qed.
 
   Lemma gss:
@@ -369,8 +369,10 @@ Module Stack.
   Proof.
     intros. unfold get, set, get_bytes, set_bytes.
     rewrite dec_eq_true. erewrite chunk_length. rewrite Mem.getN_setN_same.
-    erewrite <- decode_encode_val_similar; eauto.
-    eapply decode_encode_val_general.
+    destruct (Val.has_type_dec v (typ_of_quantity q)).
+    - rewrite proj_inj_value, Val.load_result_same; auto.
+      destruct q; auto.
+    - destruct q, v; simpl in *; intuition auto.
   Qed.
 
   Lemma gso:

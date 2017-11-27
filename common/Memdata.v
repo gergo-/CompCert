@@ -377,6 +377,53 @@ Proof.
   simpl. decEq. auto.
 Qed.
 
+(*
+Print val.
+Inductive val : Type :=
+    Vundef : val
+  | Vint : int -> val
+  | Vlong : int64 -> val
+  | Vfloat : float -> val
+  | Vsingle : float32 -> val
+  | Vptr : block -> ptrofs -> val
+*)
+
+Definition fits_quantity (v: val) (q: quantity): Prop :=
+  match v, q with
+  | Vundef, _ => True
+  | Vint _, _ => True
+  | Vlong _, Q64 => True
+  | Vfloat _, Q64 => True
+  | Vsingle _, _ => True
+  | Vptr _ _, Q32 => Archi.ptr64 = false
+  | _, Q64 => True
+  | _, _ => False
+  end.
+
+Remark fits_quantity_Q32: forall v, fits_quantity v Q32 <-> Val.has_type v Tany32.
+Proof.
+  destruct v; simpl; tauto.
+Qed.
+
+Remark fits_quantity_Q64: forall v, fits_quantity v Q64 <-> Val.has_type v Tany64.
+Proof.
+  destruct v; simpl; tauto.
+Qed.
+
+Remark fits_quantity_undef: forall q, fits_quantity Vundef q.
+Proof.
+  destruct q; simpl; auto.
+Qed.
+
+Program Definition fits_quantity_dec (v: val) (q: quantity): { fits_quantity v q } + { ~ fits_quantity v q } :=
+  match q with
+  | Q32 => if Val.has_type_dec v Tany32 then left _ else right _
+  | Q64 => left _
+  end.
+Next Obligation.
+  destruct v; simpl; auto.
+Qed.
+
 Fixpoint inj_value_rec (n: nat) (v: val) (q: quantity) {struct n}: list memval :=
   match n with
   | O => nil
@@ -384,28 +431,53 @@ Fixpoint inj_value_rec (n: nat) (v: val) (q: quantity) {struct n}: list memval :
   end.
 
 Definition inj_value (q: quantity) (v: val): list memval :=
-  inj_value_rec (size_quantity_nat q) v q.
+  if Val.eq v Vundef then
+    list_repeat (size_quantity_nat q) Undef
+  else if fits_quantity_dec v q then
+    inj_value_rec (size_quantity_nat q) v q
+  else
+    list_repeat (size_quantity_nat q) Undef.
 
-Fixpoint check_value (n: nat) (v: val) (q: quantity) (vl: list memval)
-                       {struct n} : bool :=
+Fixpoint check_value_rec (n: nat) (v: val) (q: quantity) (vl: list memval)
+                         {struct n} : bool :=
   match n, vl with
   | O, nil => true
   | S m, Fragment v' q' m' :: vl' =>
-      Val.eq v v' && quantity_eq q q' && Nat.eqb m m' && check_value m v q vl'
+      Val.eq v v' && quantity_eq q q' && Nat.eqb m m' && check_value_rec m v q vl'
   | _, _ => false
   end.
+
+Definition check_value (n: nat) (v: val) (q: quantity) (vl: list memval): bool :=
+  fits_quantity_dec v q && check_value_rec n v q vl.
 
 Definition proj_value (q: quantity) (vl: list memval) : val :=
   match vl with
   | Fragment v q' n :: vl' =>
-      if check_value (size_quantity_nat q) v q vl then v else Vundef
+    if check_value (size_quantity_nat q) v q vl
+    then v
+    else Vundef
   | _ => Vundef
   end.
 
 (* GB *)
-Lemma check_value_length:
+Lemma inj_value_rec_length:
+  forall n q v,
+  length (inj_value_rec n v q) = n.
+Proof.
+  induction n; simpl; auto.
+Qed.
+
+Lemma inj_value_length:
+  forall q v,
+  length (inj_value q v) = size_quantity_nat q.
+Proof.
+  intros. unfold inj_value.
+  destruct (Val.eq v Vundef), (fits_quantity_dec v q); auto using inj_value_rec_length, length_list_repeat.
+Qed.
+
+Lemma check_value_rec_length:
   forall q v vl n,
-  check_value n v q vl = true -> n = length vl.
+  check_value_rec n v q vl = true -> n = length vl.
 Proof.
   induction vl; intros.
 - destruct n; auto. simpl in H; congruence.
@@ -414,11 +486,19 @@ Proof.
   simpl; auto.
 Qed.
 
+Corollary check_value_length:
+  forall q v vl n,
+  check_value_rec n v q vl = true -> n = length vl.
+Proof.
+  eauto using check_value_rec_length.
+Qed.
+
 Lemma check_value_length_mismatch:
   forall q v vl,
   size_quantity_nat q <> length vl -> check_value (size_quantity_nat q) v q vl = false.
 Proof.
-  intros. apply not_true_is_false. contradict H. eapply check_value_length; eauto.
+  intros. apply not_true_is_false. contradict H.
+  eapply check_value_length. unfold check_value in H; InvBooleans; eauto.
 Qed.
 
 Lemma proj_value_length_mismatch:
@@ -426,12 +506,13 @@ Lemma proj_value_length_mismatch:
   size_quantity_nat q <> length vl -> proj_value q vl = Vundef.
 Proof.
   intros. unfold proj_value.
-  destruct vl; auto. destruct m; auto. rewrite check_value_length_mismatch; auto.
+  destruct vl; auto. destruct m; auto.
+  rewrite check_value_length_mismatch; auto.
 Qed.
 
-Lemma check_value_fragment_length:
+Lemma check_value_rec_fragment_length:
   forall v q vl f,
-  check_value (length vl) v q vl = true ->
+  check_value_rec (length vl) v q vl = true ->
   In f vl ->
   exists n', f = Fragment v q n'.
 Proof.
@@ -440,14 +521,24 @@ Proof.
   destruct a; inv H; InvBooleans. auto.
 Qed.
 
+Corollary check_value_fragment_length:
+  forall v q vl f,
+  check_value_rec (length vl) v q vl = true ->
+  In f vl ->
+  exists n', f = Fragment v q n'.
+Proof.
+  eauto using check_value_rec_fragment_length.
+Qed.
+
 Lemma check_value_fragment:
   forall n v q vl f,
   check_value n v q vl = true ->
   In f vl ->
   exists n', f = Fragment v q n'.
 Proof.
-  intros. exploit check_value_length; eauto; intros.
-  subst n; eauto using check_value_fragment_length.
+  intros. unfold check_value in H; InvBooleans.
+  exploit check_value_rec_length; eauto; intros.
+  subst n; eauto using check_value_rec_fragment_length.
 Qed.
 
 Lemma check_value_diff_q:
@@ -491,6 +582,23 @@ Proof.
   intros. unfold proj_value.
   destruct vl; auto. destruct m; auto.
   erewrite check_value_byte; eauto.
+Qed.
+
+Lemma check_value_fits_quantity:
+  forall n v q vl,
+  check_value n v q vl = true -> fits_quantity v q.
+Proof.
+  intros. unfold check_value in H. InvBooleans; auto.
+Qed.
+
+Lemma proj_value_fits_quantity:
+  forall q mvs, fits_quantity (proj_value q mvs) q.
+Proof.
+  intros; unfold proj_value.
+  destruct mvs; simpl; auto.
+  destruct m; simpl; auto.
+  destruct (check_value _ _ _ _) eqn:CV; simpl; auto.
+  eauto using check_value_fits_quantity.
 Qed.
 
 Lemma inj_bytes_encode_int:
@@ -592,37 +700,88 @@ Proof.
 Qed.
 
 Lemma check_inj_value:
-  forall v q n, check_value n v q (inj_value_rec n v q) = true.
+  forall v q n, fits_quantity v q -> check_value n v q (inj_value_rec n v q) = true.
 Proof.
-  induction n; simpl. auto.
-  unfold proj_sumbool. rewrite dec_eq_true. rewrite dec_eq_true.
+  unfold check_value.
+  induction n; simpl; intros; unfold proj_sumbool.
+  rewrite pred_dec_true; auto.
+  rewrite dec_eq_true. rewrite dec_eq_true.
   rewrite <- beq_nat_refl. simpl; auto.
 Qed.
 
 Lemma proj_inj_value:
-  forall q v, proj_value q (inj_value q v) = v.
+  forall q v, fits_quantity v q -> proj_value q (inj_value q v) = v.
 Proof.
-  intros. unfold proj_value, inj_value. destruct (size_quantity_nat_pos q) as [n EQ].
-  rewrite EQ at 1. simpl. rewrite check_inj_value. auto.
+  intros. unfold proj_value, inj_value.
+  destruct (Val.eq v Vundef). destruct q; auto.
+  rewrite pred_dec_true by auto.
+  destruct (size_quantity_nat_pos q) as [n' EQ].
+  rewrite EQ at 1. simpl.
+  rewrite check_inj_value; auto.
+Qed.
+
+Remark proj_inj_undef:
+  forall q v, ~ fits_quantity v q -> proj_value q (inj_value q v) = Vundef.
+Proof.
+  intros. unfold proj_value, inj_value.
+  rewrite pred_dec_false by (contradict H; subst; simpl; auto).
+  rewrite pred_dec_false by auto.
+  destruct q; simpl; auto.
 Qed.
 
 Remark in_inj_value:
-  forall mv v q, In mv (inj_value q v) -> exists n, mv = Fragment v q n.
+  forall mv v q,
+  v <> Vundef ->
+  fits_quantity v q ->
+  In mv (inj_value q v) ->
+  exists n, mv = Fragment v q n.
 Proof.
 Local Transparent inj_value.
-  unfold inj_value; intros until q. generalize (size_quantity_nat q). induction n; simpl; intros.
+  unfold inj_value; intros until q. intros D F.
+  rewrite pred_dec_false, pred_dec_true by auto.
+  generalize (size_quantity_nat q). induction n; simpl; intros.
   contradiction.
   destruct H. exists n; auto. eauto.
+Qed.
+
+Remark in_inj_value_cases:
+  forall v q, In Undef (inj_value q v) \/ In (Fragment v q 0) (inj_value q v).
+Proof.
+  unfold inj_value; intros until q.
+  destruct (Val.eq v Vundef). destruct q; simpl; tauto.
+  destruct q, v; simpl; try tauto.
+  destruct (Val.has_type_dec (Vptr b i) Tany32); simpl; tauto.
+Qed.
+
+Remark inj_value_charact:
+  forall q v v' q' n vl,
+  inj_value q v = Fragment v' q' n :: vl ->
+  q = q' /\ v = v' /\ S n = size_quantity_nat q /\ fits_quantity v q.
+Proof.
+  intros. unfold inj_value in H.
+  destruct (Val.eq v Vundef). destruct q; simpl in H; congruence.
+  destruct (fits_quantity_dec v q); destruct q; inv H; auto.
+Qed.
+
+Lemma proj_inj_value_undef:
+  forall q1 q2, proj_value q1 (inj_value q2 Vundef) = Vundef.
+Proof.
+  destruct q1, q2; unfold inj_value; rewrite pred_dec_true; simpl; auto.
 Qed.
 
 Lemma proj_inj_value_mismatch:
   forall q1 q2 v, q1 <> q2 -> proj_value q1 (inj_value q2 v) = Vundef.
 Proof.
-  intros. unfold proj_value. destruct (inj_value q2 v) eqn:V. auto. destruct m; auto.
-  destruct (in_inj_value (Fragment v0 q n) v q2) as [n' EQ].
+  intros.
+  destruct (Val.eq v Vundef) as [E | NE]. subst; auto using proj_inj_value_undef.
+  unfold proj_value. destruct (inj_value q2 v) eqn:V. auto. destruct m; auto.
+  destruct (inj_value_charact q2 v v0 q n l V) as (Q & V' & N & F).
+  destruct (in_inj_value (Fragment v0 q n) v q2) as [n' EQ]; auto.
   rewrite V; auto with coqlib. inv EQ.
+  unfold check_value.
   destruct (size_quantity_nat_pos q1) as [p EQ1]; rewrite EQ1; simpl.
-  unfold proj_sumbool. rewrite dec_eq_true. rewrite dec_eq_false by congruence. auto.
+  unfold proj_sumbool. rewrite dec_eq_true. rewrite dec_eq_false by congruence.
+  rewrite andb_false_r. auto.
 Qed.
 
 Definition decode_encode_val (v1: val) (chunk1 chunk2: memory_chunk) (v2: val) : Prop :=
@@ -674,7 +833,8 @@ Qed.
 Remark proj_bytes_inj_value:
   forall q v, proj_bytes (inj_value q v) = None.
 Proof.
-  intros. destruct q; reflexivity.
+  intros. unfold inj_value.
+  destruct (Val.eq v Vundef), (fits_quantity_dec v q); destruct q; simpl; reflexivity.
 Qed.
 
 Ltac solve_decode_encode_val_general :=
@@ -683,7 +843,7 @@ Ltac solve_decode_encode_val_general :=
   | |- context [ if Archi.ptr64 then _ else _ ] => destruct Archi.ptr64 eqn:?
   | |- context [ proj_bytes (inj_bytes _) ] => rewrite proj_inj_bytes
   | |- context [ proj_bytes (inj_value _ _) ] => rewrite proj_bytes_inj_value
-  | |- context [ proj_value _ (inj_value _ _) ] => rewrite ?proj_inj_value, ?proj_inj_value_mismatch by congruence
+  | |- context [ proj_value _ (inj_value _ _) ] => rewrite ?proj_inj_value, ?proj_inj_value_mismatch by (try congruence; simpl; auto)
   | |- context [ Int.repr(decode_int (encode_int 1 (Int.unsigned _))) ] => rewrite decode_encode_int_1
   | |- context [ Int.repr(decode_int (encode_int 2 (Int.unsigned _))) ] => rewrite decode_encode_int_2
   | |- context [ Int.repr(decode_int (encode_int 4 (Int.unsigned _))) ] => rewrite decode_encode_int_4
@@ -835,8 +995,11 @@ Proof.
   {
 Local Transparent inj_value.
     intros. unfold inj_value. destruct (size_quantity_nat_pos q) as [sz' EQ'].
-    rewrite EQ'. simpl. constructor; auto.
-    intros; eapply A; eauto. omega.
+    rewrite EQ'.
+    destruct (Val.eq v Vundef). simpl. constructor. eauto using in_list_repeat.
+    destruct (fits_quantity_dec v q).
+    - simpl. constructor; auto. intros; eapply A; eauto. omega.
+    - simpl. constructor. intros. eauto using in_list_repeat.
   }
   assert (C: forall bl,
              match v with Vint _ => True | Vlong _ => True | Vfloat _ => True | Vsingle _ => True | _ => False end ->
@@ -889,11 +1052,13 @@ Proof.
              check_value n v q mvs = true -> In mv mvs -> (n < size_quantity_nat q)%nat ->
              exists j, mv = Fragment v q j /\ S j <> size_quantity_nat q).
   {
-    induction n; destruct mvs; simpl; intros; try discriminate.
+    unfold check_value.
+    induction n; destruct mvs; simpl; intros; InvBooleans; try discriminate.
     contradiction.
-    destruct m; try discriminate. InvBooleans. apply beq_nat_true in H4. subst.
+    destruct m; try discriminate. InvBooleans. apply beq_nat_true in H5. subst.
     destruct H0. subst mv. exists n0; split; auto. omega.
-    eapply IHn; eauto. omega.
+    eapply IHn; eauto. apply andb_true_intro; split; eauto using proj_sumbool_is_true.
+    omega.
   }
   assert (U: forall mvs, shape_decoding chunk mvs (Val.load_result chunk Vundef)).
   {
@@ -904,16 +1069,20 @@ Proof.
              (chunk = Mint32 \/ chunk = Many32 \/ chunk = Mint64 \/ chunk = Many64) ->
              shape_decoding chunk (mv1 :: mvl) (Val.load_result chunk (proj_value q (mv1 :: mvl)))).
   {
-    intros. unfold proj_value. destruct mv1; auto.
+    intros. unfold proj_value. unfold check_value in *. destruct mv1; auto.
     destruct (size_quantity_nat_pos q) as [sz EQ]. rewrite EQ.
-    simpl. unfold proj_sumbool. rewrite dec_eq_true.
-    destruct (quantity_eq q q0); auto.
-    destruct (Nat.eqb sz n) eqn:EQN; auto.
-    destruct (check_value sz v q mvl) eqn:CHECK; auto.
-    simpl. apply beq_nat_true in EQN. subst n q0. constructor. auto.
+    simpl. unfold proj_sumbool. rewrite dec_eq_true; simpl.
+    destruct (quantity_eq q q0); try rewrite andb_false_r; auto.
+    destruct (Nat.eqb sz n) eqn:EQN; try rewrite andb_false_r; auto.
+    destruct (fits_quantity_dec v q); simpl; auto.
+    apply beq_nat_true in EQN. subst n q0.
+    destruct (check_value_rec sz v q mvl) eqn:CHECK; auto.
+    constructor. auto.
     destruct H0 as [E|[E|[E|E]]]; subst chunk; destruct q; auto || discriminate.
     congruence.
-    intros. eapply B; eauto. omega.
+    intros. eapply B; eauto.
+    rewrite proj_sumbool_is_true; simpl; eauto.
+    omega.
   }
   unfold decode_val.
   destruct (proj_bytes (mv1 :: mvl)) as [bl|] eqn:PB.
@@ -959,13 +1128,25 @@ Proof.
   congruence.
 Qed.
 
-Lemma check_value_inject:
+Lemma fits_quantity_inject:
+  forall f v v' q,
+  Val.inject f v v' -> v <> Vundef -> fits_quantity v q -> fits_quantity v' q.
+Proof.
+  intros. destruct q.
+  inversion H; simpl; auto.
+  subst; try inv H1.
+  subst; try inv H1.
+  congruence.
+  destruct v'; simpl; auto.
+Qed.
+
+Lemma check_value_rec_inject:
   forall f vl vl',
   list_forall2 (memval_inject f) vl vl' ->
   forall v v' q n,
-  check_value n v q vl = true ->
+  check_value_rec n v q vl = true ->
   Val.inject f v v' -> v <> Vundef ->
-  check_value n v' q vl' = true.
+  check_value_rec n v' q vl' = true.
 Proof.
   induction 1; intros; destruct n; simpl in *; auto.
   inv H; auto.
@@ -974,6 +1155,21 @@ Proof.
   unfold proj_sumbool; rewrite ! dec_eq_true. rewrite <- beq_nat_refl. simpl; eauto.
   inv H2; try discriminate; inv H4; congruence.
   discriminate.
+Qed.
+
+Lemma check_value_inject:
+  forall f vl vl',
+  list_forall2 (memval_inject f) vl vl' ->
+  forall v v' q n,
+  check_value n v q vl = true ->
+  Val.inject f v v' -> v <> Vundef ->
+  check_value n v' q vl' = true.
+Proof.
+  intros. unfold check_value in *; InvBooleans.
+  apply andb_true_intro; split.
+  unfold proj_sumbool. rewrite pred_dec_true; auto.
+  eauto using fits_quantity_inject.
+  eauto using check_value_rec_inject.
 Qed.
 
 Lemma proj_value_inject:
@@ -1002,15 +1198,22 @@ Proof.
   auto.
 Qed.
 
-Lemma check_value_undef:
+Lemma check_value_rec_undef:
   forall n q v vl,
-  In Undef vl -> check_value n v q vl = false.
+  In Undef vl -> check_value_rec n v q vl = false.
 Proof.
   induction n; intros; simpl.
   destruct vl. elim H. auto.
   destruct vl. auto.
   destruct m; auto. simpl in H; destruct H. congruence.
   rewrite IHn; auto. apply andb_false_r.
+Qed.
+
+Corollary check_value_undef:
+  forall n q v vl,
+  In Undef vl -> check_value n v q vl = false.
+Proof.
+  intros. unfold check_value. rewrite check_value_rec_undef, andb_false_r; auto.
 Qed.
 
 Lemma proj_value_undef:
@@ -1074,13 +1277,43 @@ Proof.
   induction n; simpl; constructor; auto. constructor.
 Qed.
 
-Lemma inj_value_inject:
-  forall f v1 v2 q, Val.inject f v1 v2 -> list_forall2 (memval_inject f) (inj_value q v1) (inj_value q v2).
+Lemma inj_value_rec_inject:
+  forall f v1 v2 q n,
+  Val.inject f v1 v2 ->
+  list_forall2 (memval_inject f) (inj_value_rec n v1 q) (inj_value_rec n v2 q).
+Proof.
+  intros.
+  generalize (size_quantity_nat q). induction n; simpl; constructor; auto.
+  constructor; auto.
+Qed.
+
+Lemma inj_value_inject_aux:
+  forall f v1 v2 q,
+  Val.inject f v1 v2 -> v1 <> Vundef ->
+  list_forall2 (memval_inject f) (inj_value q v1) (inj_value q v2).
 Proof.
   intros.
 Local Transparent inj_value.
-  unfold inj_value. generalize (size_quantity_nat q). induction n; simpl; constructor; auto.
-  constructor; auto.
+  unfold inj_value.
+  rewrite dec_eq_false by auto.
+  destruct (Val.eq v2 Vundef). inv H; congruence.
+  destruct (fits_quantity_dec v1 q).
+  exploit fits_quantity_inject; eauto. intro.
+  rewrite pred_dec_true. apply inj_value_rec_inject; auto. auto.
+  destruct (fits_quantity_dec v2 q).
+  set (vl := inj_value_rec (size_quantity_nat q) v2 q).
+  assert (L: length vl = size_quantity_nat q) by apply inj_value_rec_length.
+  rewrite <- L; apply repeat_Undef_inject_any.
+  apply repeat_Undef_inject_self.
+Qed.
+
+Lemma inj_value_inject:
+  forall f v1 v2 q, Val.inject f v1 v2 -> list_forall2 (memval_inject f) (inj_value q v1) (inj_value q v2).
+Proof.
+  intros. destruct (Val.eq v1 Vundef).
+  - unfold inj_value at 1. subst v1; rewrite dec_eq_true.
+    erewrite <- inj_value_length. apply repeat_Undef_inject_any.
+  - auto using inj_value_inject_aux.
 Qed.
 
 Theorem encode_val_inject:

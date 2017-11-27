@@ -2238,7 +2238,7 @@ Proof.
   constructor. red; intros. rewrite H3, loc_arguments_main in H. contradiction.
   red; intros. unfold Locmap.get; simpl.
   unfold Regfile.init, Regmap.init, Regfile.get, Regfile.get_bytes.
-  destruct (mreg_type r); simpl; rewrite Maps.ZMap.gi, decode_val_undef; auto.
+  destruct (mreg_type r); simpl; rewrite Maps.ZMap.gi; auto.
   red; simpl; auto.
   simpl. rewrite sep_pure. split; auto. split;[|split].
   eapply Genv.initmem_inject; eauto.
