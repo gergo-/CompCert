@@ -141,6 +141,43 @@ Proof.
   intros. destruct q; [exists 3%nat | exists 7%nat]; auto.
 Qed.
 
+(** The "most general" type that can accommodate every value that fits in the
+  given quantity. *)
+Definition typ_of_quantity (q: quantity) : typ :=
+  match q with
+  | Q32 => Tany32
+  | Q64 => Tany64
+  end.
+
+Definition quantity_of_typ (ty: typ) :=
+  match ty with
+  | Tint | Tsingle | Tany32 => Q32
+  | Tlong | Tfloat | Tany64 => Q64
+  end.
+
+Lemma typ_of_quantity_of_typ:
+  forall ty,
+  ty = Tany32 \/ ty = Tany64 ->
+  typ_of_quantity (quantity_of_typ ty) = ty.
+Proof.
+  intros; destruct H; subst; auto.
+Qed.
+
+Lemma subtype_of_typ_of_quantity:
+  forall ty,
+  subtype ty (typ_of_quantity (quantity_of_typ ty)) = true.
+Proof.
+  destruct ty; simpl; auto.
+Qed.
+
+Lemma has_typ_of_quantity:
+  forall v ty,
+  Val.has_type v ty ->
+  Val.has_type v (typ_of_quantity (quantity_of_typ ty)).
+Proof.
+  eauto using Val.has_subtype, subtype_of_typ_of_quantity.
+Qed.
+
 (** * Memory values *)
 
 (** A ``memory value'' is a byte-sized quantity that describes the current

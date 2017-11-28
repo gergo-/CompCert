@@ -16,6 +16,7 @@ Require Import Decidableplus.
 Require Import Maps.
 Require Import AST.
 Require Import Op.
+Require Import Memdata.
 
 (** ** Machine registers *)
 
@@ -175,7 +176,7 @@ Definition destroyed_by_builtin (ef: external_function): list mreg :=
   | _ => nil
   end.
 
-Definition destroyed_by_setstack (ty: typ): list mreg := nil.
+Definition destroyed_by_setstack (q: quantity): list mreg := nil.
 
 Definition destroyed_at_function_entry: list mreg :=
   R12 :: nil.

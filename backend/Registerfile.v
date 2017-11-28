@@ -22,6 +22,13 @@ Require Export Machregs.
 
 Open Scope Z_scope.
 
+(** * General requirements for machine registers *)
+
+Lemma mreg_type_cases: forall r, mreg_type r = Tany32 \/ mreg_type r = Tany64.
+Proof.
+  destruct r; simpl; auto.
+Qed.
+
 (** * Representation of the register file *)
 
 (** The [Regfile] module defines mappings from registers to values. The register

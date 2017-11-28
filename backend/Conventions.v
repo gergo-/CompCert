@@ -101,5 +101,5 @@ Proof.
   unfold loc_argument_acceptable.
   destruct l; intros. auto. destruct sl; try contradiction. destruct H1.
   generalize (loc_arguments_bounded _ _ _ H0).
-  generalize (typesize_pos ty). omega.
+  generalize (typesize_pos (typ_of_quantity q)). omega.
 Qed.
